@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="app.title">3D Building Material Quantity Takeoff / BOQ (มยผ. 1101-64)</title>
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Import Three.js via Importmap -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+
+<body>
+
+    <!-- SIDE NAV RAIL — floating tab bar, UI only, calls existing toggleWindow() -->
+    <div id="side-nav" aria-label="Navigation">
+        <div class="snav-tab snav-tab--build snav-active" id="snav-build"
+             onclick="snavActivate('build')" title="สร้างแบบจำลอง">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg>
+            <span>สร้าง</span>
+        </div>
+        <div class="snav-tab snav-tab--mat" id="snav-mat"
+             onclick="snavActivate('mat')" title="วัสดุ / Texture">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5v13M3.5 10h13"/></svg>
+            <span>วัสดุ</span>
+        </div>
+        <div class="snav-tab snav-tab--floors" id="snav-floors"
+             onclick="snavActivate('floors')" title="ชั้นและโครงสร้าง">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 14h14M3 10h14M3 6h14"/></svg>
+            <span>ชั้น</span>
+        </div>
+        <div class="snav-tab snav-tab--props" id="snav-props"
+             onclick="snavActivate('props')" title="คุณสมบัติวัตถุ">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3"/><path d="M10 3v2M10 15v2M3 10h2M15 10h2"/></svg>
+            <span>คุณสมบัติ</span>
+        </div>
+        <div class="snav-sep"></div>
+        <div class="snav-tab snav-tab--boq" id="snav-boq"
+             onclick="toggleWindow('panel-calc');snavActivate('boq')" title="ถอดปริมาณ BOQ">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="3" width="12" height="14" rx="1.5"/><path d="M7 7h6M7 10h6M7 13h4"/></svg>
+            <span>BOQ</span>
+        </div>
+        <div class="snav-tab snav-tab--outliner" id="snav-outliner"
+             onclick="toggleWindow('panel-outliner');snavActivate('outliner')" title="รายการโครงสร้าง">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 5h12M4 10h8M4 15h10"/></svg>
+            <span>รายการ</span>
+        </div>
+        <div class="snav-sep"></div>
+        <div class="snav-tab snav-tab--proj" id="snav-proj"
+             onclick="snavActivate('proj')" title="จัดการโครงการ">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 16V8l6-5 6 5v8"/><path d="M8 16v-4h4v4"/></svg>
+            <span>โปรเจค</span>
+        </div>
+        <div class="snav-sep"></div>
+        <div class="snav-tab snav-tab--settings" id="snav-settings"
+             onclick="toggleWindow('panel-settings')" title="ตั้งค่า">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M15.3 4.7l-1.6 1.6M6.3 13.7l-1.6 1.6"/></svg>
+            <span>ตั้งค่า</span>
+        </div>
+        <div class="snav-tab snav-tab--help" id="snav-help"
+             onclick="document.getElementById('quickstart').style.display='flex'" title="วิธีใช้">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7"/><path d="M7.9 8a2.2 2.2 0 1 1 3.3 1.9c-.8.5-1.2.9-1.2 1.8M10 14.3v.1"/></svg>
+            <span>วิธีใช้</span>
+        </div>
+    </div>
+
+    <!-- 1. Canvas สำหรับแสดงผล 3D -->
+    <div id="canvas-container"></div>
+
+    <!-- 2. Taskbar ด้านบน -->
+    <div id="taskbar">
+        <div class="tb-group">
+            <button class="tb-icon" id="tb-undo" title="ย้อนกลับ (Ctrl+Z)" aria-label="Undo"
+                onclick="window.dispatchEvent(new KeyboardEvent('keydown',{key:'z',ctrlKey:true,bubbles:true}))">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5 4 9l4 4"/><path d="M4 9h8a4 4 0 0 1 0 8H9"/></svg></button>
+            <button class="tb-icon" id="tb-redo" title="ทำซ้ำ (Ctrl+Y)" aria-label="Redo"
+                onclick="window.dispatchEvent(new KeyboardEvent('keydown',{key:'y',ctrlKey:true,bubbles:true}))">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 5 4 4-4 4"/><path d="M16 9H8a4 4 0 0 0 0 8h3"/></svg></button>
+            <span class="tb-vsep"></span>
+            <button class="tb-icon" id="tb-open" title="เปิดโปรเจค (.json)" aria-label="Open"
+                onclick="document.getElementById('btn-load-project')?.click()">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2.5 6c0-.8.6-1.4 1.4-1.4h3.4L9 6.5h7.1c.8 0 1.4.6 1.4 1.4v6.6c0 .8-.6 1.4-1.4 1.4H3.9c-.8 0-1.4-.6-1.4-1.4V6Z"/></svg></button>
+            <button class="tb-icon" id="tb-save" title="บันทึกโปรเจค (.json)" aria-label="Save"
+                onclick="document.getElementById('btn-save-project')?.click()">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 3.5h9l3 3V16a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 4 16V3.5Z"/><path d="M7 3.5v4h5v-4M7 16.5v-5h6v5"/></svg></button>
+        </div>
+        <div class="tb-title" id="tb-title">3D Building BOQ</div>
+        <!-- legacy toggle buttons kept (IDs used by updateTaskbar); hidden — replaced by side nav -->
+        <button id="tb-tools" class="task-btn tb-legacy active" onclick="toggleWindow('panel-tools')" data-i18n="taskbar.tools">เครื่องมือ</button>
+        <button id="tb-outliner" class="task-btn tb-legacy" onclick="toggleWindow('panel-outliner')" data-i18n="taskbar.outliner">รายการโครงสร้าง</button>
+        <button id="tb-calc" class="task-btn tb-legacy" onclick="toggleWindow('panel-calc')" data-i18n="taskbar.calc">ถอดปริมาณวัสดุ (BOQ)</button>
+        <button id="tb-settings" class="task-btn tb-legacy" onclick="toggleWindow('panel-settings')" data-i18n="taskbar.settings">ตั้งค่า</button>
+        <button id="tb-help" class="task-btn tb-legacy" onclick="document.getElementById('quickstart').style.display='flex'" data-i18n="taskbar.help">วิธีใช้</button>
+        <div id="theme-switcher" class="theme-switcher" role="group" aria-label="Theme">
+            <button class="theme-btn" data-theme-choice="dark"><span class="theme-dot theme-dot--dark"></span></button>
+            <button class="theme-btn" data-theme-choice="light"><span class="theme-dot theme-dot--light"></span></button>
+            <button class="theme-btn" data-theme-choice="sky"><span class="theme-dot theme-dot--sky"></span></button>
+        </div>
+        <div id="lang-switcher" class="lang-switcher" role="group" aria-label="Language">
+            <button id="lang-btn-th" class="lang-btn active" data-lang="th">TH</button>
+            <button id="lang-btn-en" class="lang-btn" data-lang="en">EN</button>
+        </div>
+    </div>
+
+    <!-- ป้ายลอยแสดงความยาวผนังขณะลากวาด -->
+    <div id="wall-length-label" class="wall-length-label hidden"></div>
+
+    <!-- Viewport overlay — active floor readout (real FloorManager data only) -->
+    <div id="viewport-floor-badge" class="viewport-badge"></div>
+
+    <!-- 3. หน้าต่างเครื่องมือ (Tools Panel) -->
+    <div id="panel-tools" class="window-panel">
+        <div id="panel-tools-header" class="window-header">
+            <span class="win-title" data-i18n="panel.tools.title">สร้างชิ้นงาน 3 มิติ</span>
+            <div class="win-controls">
+                <button class="win-btn btn-close" onclick="closeWindow('panel-tools')">×</button>
+            </div>
+        </div>
+        <div class="window-content">
+
+            <!-- ══ SECTION: สร้างแบบจำลอง (build) ══ -->
+            <div class="snav-section" data-snav-section="build">
+                <h3 data-i18n="panel.tools.addMaterialTab">เพิ่มวัสดุ</h3>
+                <div id="material-tabs-home"><div id="material-tabs" class="material-tabs"></div></div>
+                <button id="btn-add-wall" data-i18n="tools.addWall">เพิ่มผนัง (Wall)</button>
+
+                <h3 class="mt-md" data-i18n="tools.parametricWall.heading">ผนังพาราเมตริก (ทดลอง)</h3>
+                <h4 data-i18n="tools.parametricWall.defaultsHeading">ค่าตั้งต้นก่อนลากสร้าง (ความยาวกำหนดตอนลาก)</h4>
+                <div class="pos-row">
+                    <input type="number" id="inp-wall-height" step="0.1" min="0.1" data-i18n-placeholder="placeholder.heightM" placeholder="สูง (ม.)">
+                    <input type="number" id="inp-wall-thickness" step="0.01" min="0.01" data-i18n-placeholder="placeholder.thicknessM" placeholder="หนา (ม.)">
+                </div>
+                <button id="btn-parametric-wall-tool" class="action-btn" data-i18n="tools.parametricWall.draw">วาดผนัง (คลิก-ลาก-ปล่อย)</button>
+                <p class="outliner-hint" data-i18n="tools.parametricWall.hint">ผนังกลุ่มนี้เชื่อมกันเป็นกราฟจริง คำนวณห้อง/BOQ อัตโนมัติเมื่อผนังเปลี่ยน</p>
+                <button id="btn-parametric-door-tool" class="action-btn" data-i18n="tools.parametricDoor.add">เพิ่มประตู (คลิกที่ผนัง)</button>
+                <button id="btn-parametric-window-tool" class="action-btn" data-i18n="tools.parametricWindow.add">เพิ่มหน้าต่าง (คลิกที่ผนัง)</button>
+                <button id="btn-opening-settings" class="action-btn" data-i18n="tools.opening.settings">ตั้งค่าประตู/หน้าต่าง (ขนาด + ล็อกความสูง)</button>
+                <div id="opening-settings-panel" style="display:none">
+                    <h4 data-i18n="tools.opening.doorHeading">ประตู — กว้าง / สูง / สูงจากพื้น (ม.)</h4>
+                    <div class="pos-row">
+                        <input type="number" id="inp-door-w" step="0.05" min="0.1" title="กว้าง">
+                        <input type="number" id="inp-door-h" step="0.05" min="0.1" title="สูง">
+                        <input type="number" id="inp-door-sill" step="0.05" min="0" title="สูงจากพื้น">
+                    </div>
+                    <h4 data-i18n="tools.opening.windowHeading">หน้าต่าง — กว้าง / สูง / สูงจากพื้น (ม.)</h4>
+                    <div class="pos-row">
+                        <input type="number" id="inp-window-w" step="0.05" min="0.1" title="กว้าง">
+                        <input type="number" id="inp-window-h" step="0.05" min="0.1" title="สูง">
+                        <input type="number" id="inp-window-sill" step="0.05" min="0" title="สูงจากพื้น">
+                    </div>
+                    <label class="outliner-hint" style="display:block"><input type="checkbox" id="chk-lock-sill" checked> <span data-i18n="tools.opening.lockSill">ล็อกความสูงจากพื้นให้เท่ากันทุกบาน (ชนิดเดียวกัน)</span></label>
+                    <label class="outliner-hint" style="display:block"><input type="checkbox" id="chk-lock-head"> <span data-i18n="tools.opening.lockHead">ล็อกระดับหัวช่องให้เท่ากัน (สูงจากพื้น + ความสูง)</span></label>
+                    <button id="btn-opening-apply" class="action-btn" data-i18n="tools.opening.apply">นำไปใช้ (รวมช่องที่เจาะไว้แล้ว)</button>
+                </div>
+                <p id="opening-status" class="outliner-hint" style="min-height:1.2em"></p>
+                <p class="outliner-hint" data-i18n="tools.opening.hint">คลิกที่ผนังพาราเมตริกเพื่อวางประตู/หน้าต่าง — พื้นที่ผนังจะถูกหักอัตโนมัติใน BOQ</p>
+                <p class="outliner-hint" data-i18n="tools.opening.hint2">เลื่อนเมาส์บนผนังเพื่อดูพรีวิวตำแหน่งที่จะเจาะ (เขียว = เจาะได้, แดง = เจาะไม่ได้) · Alt+คลิกที่ช่อง = ลบ · Ctrl+Z = ยกเลิก</p>
+
+                <h3 class="mt-md" data-i18n="tools.cut.heading">ลากเส้นแบ่งช่อง &amp; ขึ้นรูป 3 มิติ (ต่อชั้นที่กำลังเลือก)</h3>
+                <p class="outliner-hint" data-i18n="tools.cut.hint">คลิก-ลาก-ปล่อย เพื่อวางเส้นตัด ปลายเส้นจะ snap เข้าขอบเขต/เส้นตัดเดิมให้อัตโนมัติ เริ่มจากขอบเขตภาพเขตที่ดิน (ถ้ามี) หรือขอบเขตกริดทั่วไป</p>
+                <button id="btn-cut-tool" class="action-btn" data-i18n="tools.cut.draw">ตัดเส้นแบ่งช่อง (คลิก-ลาก-ปล่อย)</button>
+                <div class="qs-actions">
+                    <button class="calc-btn" id="btn-cut-undo" data-i18n="tools.cut.undo">เลิกทำเส้นล่าสุด</button>
+                    <button class="calc-btn" id="btn-cut-reset" data-i18n="tools.cut.reset">ล้างเส้นตัดทั้งหมด</button>
+                </div>
+                <p class="outliner-hint" id="cut-face-count" data-i18n="tools.cut.faceCount.none">ยังไม่มีเส้นตัด</p>
+
+                <h4 class="mt-md" data-i18n="tools.extrude.heading">ขึ้นรูปช่องที่ตัดไว้เป็นชิ้นงาน 3 มิติ (Extrude)</h4>
+                <div class="pos-row">
+                    <input type="number" id="inp-extrude-height" step="0.1" min="0.01" value="2.5" data-i18n-placeholder="placeholder.heightM" placeholder="สูง (ม.)">
+                </div>
+                <button id="btn-extrude-pick-mode" class="action-btn" data-i18n="tools.extrude.pickMode">เลือกช่อง Extrude (คลิกทีละช่อง)</button>
+                <p class="outliner-hint" data-i18n="tools.extrude.hint">แต่ละช่องที่เกิดจากเส้นตัดจะกลายเป็นชิ้นงานทึบสูงตามที่กำหนด ใช้วัสดุที่เลือกไว้ในแท็บ "เพิ่มวัสดุ" ด้านบน — ย้าย/หมุน/เปลี่ยนวัสดุ/รวมใน BOQ ได้เหมือนชิ้นงานอื่น</p>
+            </div>
+
+            <!-- ══ SECTION: วัสดุ / Texture (mat) ══ -->
+            <div class="snav-section snav-section--hidden" data-snav-section="mat">
+                <h3>วัสดุและพื้นผิว (Texture)</h3>
+                <div id="material-tabs-mat-slot"></div>
+                <button id="btn-manage-textures" class="action-btn" data-i18n="tools.manageTextures">จัดการพื้นผิว (Texture)</button>
+                <p class="outliner-hint">เลือกวัสดุที่ต้องการแล้วกดจัดการพื้นผิว เพื่อตั้งค่า Texture แต่ละชนิด</p>
+            </div>
+
+            <!-- ══ SECTION: ชั้นและโครงสร้าง (floors) ══ -->
+            <div class="snav-section snav-section--hidden" data-snav-section="floors">
+                <h3 data-i18n="tools.floors.heading">ชั้นอาคาร (Floors)</h3>
+                <div id="floor-switcher" class="material-tabs"></div>
+                <div id="floor-layer-panel" style="display:none; margin-top:6px;">
+                    <label class="setting-row"><span data-i18n="tools.floors.designedGrid">ตารางออกแบบ</span><input type="checkbox" id="chk-layer-designedGrid" class="setting-toggle"></label>
+                    <label class="setting-row"><span data-i18n="tools.floors.plainGrid">ตารางทั่วไป</span><input type="checkbox" id="chk-layer-plainGrid" class="setting-toggle"></label>
+                    <label class="setting-row"><span data-i18n="tools.floors.landPlotImage">ภาพเขตที่ดิน</span><input type="checkbox" id="chk-layer-landPlotImage" class="setting-toggle"></label>
+                </div>
+                <button id="btn-add-floor" class="action-btn" data-i18n="tools.floors.add">+ เพิ่มชั้นใหม่</button>
+                <p class="outliner-hint" data-i18n="tools.floors.hint">ผนังใหม่ที่วาดจะอยู่บนชั้นที่เลือกไว้ (แถบสีเน้น) เท่านั้น — คลิกชื่อชั้นซ้ำเพื่อเปิด/ปิดแผงเลเยอร์</p>
+            </div>
+
+            <!-- ══ SECTION: คุณสมบัติวัตถุ + จัดการโปรเจค (props) ══ -->
+            <div class="snav-section snav-section--hidden" data-snav-section="props">
+                <!-- Properties Control สำหรับช่องเจาะ (ประตู/หน้าต่าง) ที่คลิกเลือก -->
+                <div id="opening-edit-panel" class="hidden">
+                    <h3 data-i18n="tools.openingEdit.heading">แก้ไขช่องเจาะที่เลือก</h3>
+                    <h4 data-i18n="tools.openingEdit.offsetHeading">ตำแหน่งตามแนวผนัง / กว้าง / สูง / สูงจากพื้น (ม.)</h4>
+                    <div class="pos-row">
+                        <input type="number" id="inp-open-offset" step="0.05" title="ระยะจากต้นผนัง">
+                        <input type="number" id="inp-open-w" step="0.05" min="0.1" title="กว้าง">
+                    </div>
+                    <div class="pos-row">
+                        <input type="number" id="inp-open-h" step="0.05" min="0.1" title="สูง">
+                        <input type="number" id="inp-open-sill" step="0.05" min="0" title="สูงจากพื้น">
+                    </div>
+                    <p class="outliner-hint" data-i18n="tools.openingEdit.hint">ลากคานเลื่อน หรือพิมพ์ตัวเลขตรง ๆ แล้วกด Enter/Tab — ระบบจะหักพื้นที่ผนังใหม่อัตโนมัติ</p>
+                    <button id="btn-opening-delete" class="btn-danger mt-sm" data-i18n="tools.openingEdit.delete">ลบช่องเจาะนี้ (Alt+คลิกก็ได้)</button>
+                </div>
+
+                <!-- Properties Control (แสดงเมื่อเลือกวัตถุ) -->
+                <div id="properties-panel" class="hidden">
+                    <h3 data-i18n="tools.position.heading">ตำแหน่งวัตถุ (Position)</h3>
+                    <h4 data-i18n="tools.position.subheading">ตำแหน่ง X, Y, Z (เมตร)</h4>
+                    <div class="pos-row">
+                        <input type="number" id="inp-pos-x" step="0.1" placeholder="X">
+                        <input type="number" id="inp-pos-y" step="0.1" placeholder="Y">
+                        <input type="number" id="inp-pos-z" step="0.1" placeholder="Z">
+                    </div>
+                    <h4 class="mt-md" data-i18n="tools.material.changeHeading">เปลี่ยนวัสดุของชิ้น/กลุ่มนี้</h4>
+                    <div id="material-tabs-prop" class="material-tabs"></div>
+                    <button id="btn-duplicate" class="action-btn" data-i18n="tools.duplicate">คัดลอกชิ้นงานนี้ (Duplicate)</button>
+                    <button id="btn-calc-selected" class="calc-btn mt-sm" data-i18n="tools.calcSelected">ถอดปริมาณเฉพาะชิ้น/กลุ่มนี้</button>
+                </div>
+                <p class="outliner-hint" style="margin-top:8px">คลิกเลือกวัตถุในฉากหรือรายการเพื่อดูคุณสมบัติ</p>
+                <button id="btn-clear-all" class="btn-danger mt-sm" data-i18n="tools.clearAll">ล้างฉากทั้งหมด (Clear All)</button>
+            </div>
+
+            <!-- ══ SECTION: จัดการโปรเจค (proj) ══ -->
+            <div class="snav-section snav-section--hidden" data-snav-section="proj">
+                <h3 data-i18n="tools.project.heading">จัดการโปรเจค</h3>
+                <button id="btn-save-project" class="action-btn" data-i18n="tools.project.save">บันทึกโปรเจค (.json)</button>
+                <button id="btn-load-project" class="action-btn" data-i18n="tools.project.load">เปิดโปรเจค (.json)</button>
+                <button id="btn-reset-view" class="action-btn" data-i18n="tools.resetView">รีเซ็ตมุมกล้อง</button>
+                <input type="file" id="file-load-project" accept="application/json,.json" hidden>
+                <button id="btn-calc-all" class="calc-btn mt-lg" data-i18n="tools.calcAll">ถอดปริมาณวัสดุทั้งหมด (BOQ)</button>
+                <details class="shortcuts-box">
+                    <summary data-i18n="shortcuts.summary">⌨ คีย์ลัด</summary>
+                    <div>
+                        <strong>Ctrl+Z</strong> <span data-i18n="shortcuts.undo">ย้อนกลับ</span> &nbsp;|&nbsp; <strong>Ctrl+Y</strong> <span data-i18n="shortcuts.redo">ทำซ้ำ</span> &nbsp;|&nbsp; <strong>Ctrl+C</strong> <span data-i18n="shortcuts.copy">คัดลอก</span> &nbsp;|&nbsp;
+                        <strong>Ctrl+V</strong> <span data-i18n="shortcuts.paste">วาง</span> &nbsp;|&nbsp; <strong>Delete</strong> <span data-i18n="shortcuts.delete">ลบ</span><br>
+                        <strong>T</strong> <span data-i18n="shortcuts.move">ย้าย</span> &nbsp;|&nbsp; <strong>E</strong> <span data-i18n="shortcuts.rotate">หมุน</span> &nbsp;|&nbsp; <strong>R</strong> <span data-i18n="shortcuts.scale">ปรับขนาด</span> &nbsp;|&nbsp; <strong>Q</strong> <span data-i18n="shortcuts.selectOnly">เลือกอย่างเดียว</span><br>
+                        <strong>Shift+<span data-i18n="shortcuts.boxSelect">ครอบเลือก/รวมกลุ่ม</span></strong> &nbsp;|&nbsp; <span data-i18n="shortcuts.doubleClickUngroup">ดับเบิลคลิกกลุ่ม = แยกกลุ่ม</span>
+                    </div>
+                </details>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- 4. หน้าต่าง Outliner (รายการวัตถุในระบบ) -->
+    <div id="panel-outliner" class="window-panel">
+        <div id="panel-outliner-header" class="window-header">
+            <span class="win-title" data-i18n="panel.outliner.title">โครงสร้างในฉาก</span>
+            <div class="win-controls">
+                <button class="win-btn btn-close" onclick="closeWindow('panel-outliner')">×</button>
+            </div>
+        </div>
+        <div class="window-content">
+            <div id="outliner-toolbar">
+                <button class="layer-tool-btn" id="btn-new-group" data-i18n-title="outliner.newGroup.title" title="สร้างโฟลเดอร์กลุ่มเปล่า แล้วลากชิ้นงานเข้าไปทีหลังได้"><svg viewBox="0 0 16 16" class="btn-ico"><path d="M1.5 4.2c0-.7.6-1.2 1.2-1.2h3l1.2 1.4h6.4c.7 0 1.2.5 1.2 1.2v6.2c0 .7-.5 1.2-1.2 1.2H2.7c-.7 0-1.2-.5-1.2-1.2V4.2Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 6.5v3M6.5 8h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><span data-i18n="outliner.newGroup">กลุ่มใหม่</span></button>
+                <button class="layer-tool-btn" id="btn-group-selected" data-i18n-title="outliner.groupSelected.title" title="ติ๊ก ☑ เลือกอย่างน้อย 2 ชิ้น แล้วกดปุ่มนี้เพื่อรวมเป็นกลุ่ม"><svg viewBox="0 0 16 16" class="btn-ico"><path d="M1.5 4.2c0-.7.6-1.2 1.2-1.2h3l1.2 1.4h6.4c.7 0 1.2.5 1.2 1.2v6.2c0 .7-.5 1.2-1.2 1.2H2.7c-.7 0-1.2-.5-1.2-1.2V4.2Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 6v3M6.3 7.3 8 9l1.7-1.7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="outliner.groupSelected">รวมกลุ่มที่ติ๊ก</span></button>
+                <button class="layer-tool-btn" id="btn-ungroup-selected" data-i18n-title="outliner.ungroupSelected.title" title="คลิกเลือกกลุ่มในลิสต์ก่อน แล้วกดปุ่มนี้เพื่อแยกกลุ่ม"><svg viewBox="0 0 16 16" class="btn-ico"><path d="M1.5 4.2c0-.7.6-1.2 1.2-1.2h3l1.2 1.4h6.4c.7 0 1.2.5 1.2 1.2v6.2c0 .7-.5 1.2-1.2 1.2H2.7c-.7 0-1.2-.5-1.2-1.2V4.2Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M8 9V6M6.3 7.7 8 6l1.7 1.7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="outliner.ungroupSelected">แยกกลุ่ม</span></button>
+                <button class="layer-tool-btn" id="btn-calc-ticked" data-i18n-title="outliner.calcTicked.title" title="ติ๊ก ☑ ชิ้นงานที่ต้องการ แล้วกดปุ่มนี้เพื่อถอดปริมาณเฉพาะรายการที่ติ๊ก"><svg viewBox="0 0 16 16" class="btn-ico"><path d="M3 8.5 6 11.5 13 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="outliner.calcTicked">ถอดปริมาณตามที่ติ๊ก</span></button>
+            </div>
+            <p class="outliner-hint" data-i18n-html="outliner.dragHintFull">
+                ทำเครื่องหมาย ☑ ที่ชิ้นงานตั้งแต่ 2 รายการขึ้นไป แล้วกดปุ่ม "รวมกลุ่มที่ติ๊ก" เพื่อจัดกลุ่ม &nbsp;•&nbsp;
+                หรือ<strong>ลากชื่อชิ้นงาน</strong>ไปวางบนโฟลเดอร์ที่ต้องการ เพื่อย้ายเข้ากลุ่ม &nbsp;•&nbsp;
+                ลากออกมาวางบนพื้นที่ว่างของรายการ เพื่อนำออกจากกลุ่ม
+            </p>
+            <ul id="object-list"></ul>
+        </div>
+    </div>
+
+    <!-- 5. หน้าต่างแสดงผล BOQ (Calc Panel) -->
+    <div id="panel-calc" class="window-panel">
+        <div id="panel-calc-header" class="window-header">
+            <span class="win-title" data-i18n="panel.calc.title">รายงานถอดปริมาณวัสดุ</span>
+            <div class="win-controls">
+                <button class="win-btn btn-close" onclick="closeWindow('panel-calc')">×</button>
+            </div>
+        </div>
+        <div class="window-content">
+            <div id="calc-result-content">
+                <p class="calc-placeholder" data-i18n="calc.placeholder">กดปุ่ม "ถอดปริมาณวัสดุทั้งหมด" เพื่อดูรายงาน BOQ</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5b. หน้าต่างตั้งค่า (Settings Panel) — เพิ่มตัวเลือกใหม่ในอนาคตได้โดยเติม
+         <label class="setting-row"> อีกอันในนี้ แล้วผูก id เข้ากับ appSettings ใน script.js -->
+    <div id="panel-settings" class="window-panel">
+        <div id="panel-settings-header" class="window-header">
+            <span class="win-title" data-i18n="panel.settings.title">ตั้งค่า</span>
+            <div class="win-controls">
+                <button class="win-btn btn-close" onclick="closeWindow('panel-settings')">×</button>
+            </div>
+        </div>
+        <div class="window-content">
+            <h3 data-i18n="settings.theme.heading">ธีมสี</h3>
+            <div class="theme-options" role="group" aria-label="Theme">
+                <button class="theme-option" data-theme-choice="dark"><span class="theme-dot theme-dot--dark"></span><span data-i18n="settings.theme.dark">มืด</span></button>
+                <button class="theme-option" data-theme-choice="light"><span class="theme-dot theme-dot--light"></span><span data-i18n="settings.theme.light">สว่าง</span></button>
+                <button class="theme-option" data-theme-choice="sky"><span class="theme-dot theme-dot--sky"></span><span data-i18n="settings.theme.sky">ขาว-ฟ้า</span></button>
+            </div>
+            <p class="outliner-hint" data-i18n="settings.theme.hint">ธีม "ขาว-ฟ้า" โทนอ่อนนุ่ม ไม่แสบตา เหมาะกับการใช้งานตอนกลางวัน</p>
+
+            <h3 class="mt-md" data-i18n="settings.wallDrawing.heading">การวาดผนัง</h3>
+            <label class="setting-row">
+                <span data-i18n="settings.showDragLength">แสดงความยาวขณะลากวาดผนัง</span>
+                <input type="checkbox" id="setting-show-drag-length" class="setting-toggle" checked>
+            </label>
+            <p class="outliner-hint" data-i18n="settings.showDragLength.hint">แสดงป้ายความยาว (เมตร) ลอยติดเมาส์ระหว่างลากวาดผนังพาราเมตริก</p>
+
+            <!-- ภาพเขตที่ดินอ้างอิง (handoff ข้อ 2+3) — ข้อมูลแยกเก็บต่อ "ชั้น" ที่กำลัง active อยู่ -->
+            <h3 class="mt-md" data-i18n="settings.landplot.heading">ภาพเขตที่ดิน (ต่อชั้นที่กำลังเลือก)</h3>
+            <p class="outliner-hint" id="landplot-hint-empty" data-i18n="settings.landplot.hintEmpty">อัปโหลดภาพผังที่ดิน (PNG/JPG) เพื่อวางซ้อนบนกริดของชั้นนี้ ลาก-ย่อ-ขยาย-หมุนได้อิสระ</p>
+            <p class="outliner-hint" id="landplot-hint-loaded" style="display:none" data-i18n="settings.landplot.hintLoaded">แตะ "แก้ไขตำแหน่ง/ขนาด" แล้วลากลูกศรบนภาพเพื่อขยับ/หมุน/ปรับขนาด</p>
+            <label class="setting-row">
+                <span data-i18n="settings.landplot.imageFile">ไฟล์ภาพ</span>
+                <input type="file" accept="image/*" id="inp-land-plot-image">
+            </label>
+            <label class="setting-row">
+                <span data-i18n="settings.landplot.showImage">แสดงภาพ</span>
+                <input type="checkbox" id="setting-landplot-visible" class="setting-toggle" checked>
+            </label>
+            <label class="setting-row">
+                <span data-i18n="settings.landplot.showOverlayGrid">แสดงตารางครอบภาพ</span>
+                <input type="checkbox" id="setting-landplot-grid" class="setting-toggle" checked>
+            </label>
+            <label class="setting-row">
+                <span data-i18n="settings.landplot.opacity">ความโปร่งใส</span>
+                <input type="range" id="inp-landplot-opacity" min="0.1" max="1" step="0.05" value="0.75">
+            </label>
+            <div class="pos-row">
+                <input type="number" id="inp-landplot-width" step="0.1" min="0.01" data-i18n-placeholder="placeholder.widthM" placeholder="กว้าง (ม.)">
+                <input type="number" id="inp-landplot-depth" step="0.1" min="0.01" data-i18n-placeholder="placeholder.lengthM" placeholder="ยาว (ม.)">
+            </div>
+            <div class="qs-actions">
+                <button class="calc-btn" id="btn-landplot-edit" disabled data-i18n="settings.landplot.edit">แก้ไขตำแหน่ง/ขนาด/มุม</button>
+                <button class="calc-btn" id="btn-landplot-remove" disabled data-i18n="settings.landplot.remove">ลบภาพ</button>
+            </div>
+            <div id="landplot-edit-modes" style="display:none; gap:6px; margin-top:8px;">
+                <button class="vp-tool active" data-landplot-mode="translate" data-i18n="action.move">ย้าย</button>
+                <button class="vp-tool" data-landplot-mode="rotate" data-i18n="action.rotate">หมุน</button>
+                <button class="vp-tool" data-landplot-mode="scale" data-i18n="action.scale">ขนาด</button>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- 6b. View Orientation Gizmo (top-right of viewport, camera nav only) -->
+    <div id="view-gizmo" aria-label="View orientation"></div>
+    <!-- 6c. 2D/3D mode toggle — sits just under the gizmo. In 2D, free
+         rotate is disabled (pan/zoom only); the gizmo's axis nodes still
+         work to jump between the flat top/bottom/left/right/front/back
+         views, only the diagonal isometric node is hidden (see CSS). -->
+    <div id="view-mode-toggle" aria-label="Toggle 2D/3D view">3D</div>
+
+    <!-- 6. แถบเครื่องมือลอยกลางจอ (แบบ SketchUp) -->
+    <div id="viewport-toolbar">
+        <button class="vp-tool active" data-tool="translate" data-i18n-title="action.move.titleT" title="ย้าย (T)"><span class="vp-ico">✥</span><span data-i18n="action.move">ย้าย</span></button>
+        <button class="vp-tool" data-tool="rotate" data-i18n-title="action.rotate.titleE" title="หมุน (E)"><span class="vp-ico">⟳</span><span data-i18n="action.rotate">หมุน</span></button>
+        <button class="vp-tool" data-tool="scale" data-i18n-title="action.scale.titleR" title="ปรับขนาด (R)"><span class="vp-ico">⤢</span><span data-i18n="action.scale">ขนาด</span></button>
+        <div class="vp-sep"></div>
+        <button class="vp-tool" data-tool="select" data-i18n-title="action.select.titleQ" title="เลือกอย่างเดียว ไม่ให้ลูกศรบัง (Q)"><span class="vp-ico">⌖</span><span data-i18n="action.select">เลือก</span></button>
+    </div>
+
+    <!-- 7a. ตั้งค่าตารางพื้นที่ทำงานก่อนเริ่มใช้งาน (บังคับตั้งค่าครั้งแรก) -->
+    <div id="gridsetup">
+        <div class="qs-card">
+            <h2 data-i18n="gridsetup.title">ตั้งค่าตารางก่อนเริ่มใช้งาน</h2>
+            <p class="qs-sub" data-i18n="gridsetup.sub">กำหนดความกว้าง/ยาวของพื้นที่ทำงาน (เมตร) และจำนวนช่องต่อด้าน — ปรับใหม่ทีหลังได้ที่แผง "ตั้งค่า"</p>
+            <div class="pos-row">
+                <input type="number" id="inp-grid-width" step="1" min="2" value="20" data-i18n-placeholder="placeholder.widthM" placeholder="กว้าง (ม.)">
+                <input type="number" id="inp-grid-length" step="1" min="2" value="20" data-i18n-placeholder="placeholder.lengthM" placeholder="ยาว (ม.)">
+                <input type="number" id="inp-grid-divisions" step="1" min="1" value="20" data-i18n-placeholder="placeholder.gridDivisions" placeholder="จำนวนช่อง">
+            </div>
+            <div class="qs-actions">
+                <button class="calc-btn qs-close-btn" id="gridsetup-close" data-i18n="gridsetup.start">เริ่มใช้งาน</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. การ์ดเริ่มต้นใช้งาน -->
+    <div id="quickstart">
+        <div class="qs-card">
+            <h2 data-i18n="quickstart.title">เริ่มใช้งานใน 3 ขั้นตอน</h2>
+            <p class="qs-sub" data-i18n="quickstart.sub">โปรแกรมถอดปริมาณวัสดุก่อสร้าง (BOQ)</p>
+            <div class="qs-steps">
+                <div class="qs-step"><div class="qs-num">1</div><div class="qs-step-body" data-i18n-html="quickstart.step1"><strong>เลือกวัสดุผนัง</strong> ที่แท็บในแผง "เครื่องมือ" (ซ้ายบน) → กด <strong>เพิ่มผนัง</strong> ชิ้นงานจะโผล่กลางฉาก</div></div>
+                <div class="qs-step"><div class="qs-num">2</div><div class="qs-step-body" data-i18n-html="quickstart.step2"><strong>คลิกเลือกชิ้นงาน</strong> แล้วใช้แถบเครื่องมือด้านล่างจอ: <strong>ย้าย · หมุน · ปรับขนาด</strong> (หรือพิมพ์ตัวเลขขนาดที่ป้ายสีฟ้าติดชิ้นงานได้เลย)</div></div>
+                <div class="qs-step"><div class="qs-num">3</div><div class="qs-step-body" data-i18n-html="quickstart.step3">กด <strong>ถอดปริมาณวัสดุทั้งหมด (BOQ)</strong> เพื่อดูรายการวัสดุพร้อมปริมาณสำหรับสั่งซื้อ</div></div>
+            </div>
+            <div class="qs-controls">
+                <strong class="qs-accent" data-i18n="quickstart.rotateHeading">การหมุนมุมมอง (เหมือน SketchUp):</strong><br>
+                <span data-i18n-html="quickstart.controlsHint">หมุนกล้อง = <kbd>ลากเมาส์กลาง</kbd> หรือ <kbd>ลากเมาส์ซ้ายที่พื้นที่ว่าง</kbd> &nbsp;·&nbsp;
+                เลื่อนภาพ = <kbd>ลากเมาส์ขวา</kbd> &nbsp;·&nbsp; ซูม = <kbd>ล้อเมาส์</kbd></span>
+            </div>
+            <div class="qs-actions">
+                <label id="qs-dontshow"><input type="checkbox" id="qs-dontshow-chk"> <span data-i18n="quickstart.dontShowAgain">ไม่ต้องแสดงอีก</span></label>
+                <button class="calc-btn qs-close-btn" id="qs-close" data-i18n="quickstart.start">เริ่มใช้งาน</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 8. หน้าต่างจัดการพื้นผิว (Texture) — ข้อ 6 -->
+    <div id="texture-modal">
+        <div class="qs-card" style="max-height:82vh; overflow-y:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                <div>
+                    <h2 data-i18n="texture.modal.title">จัดการพื้นผิว (Texture) ของวัสดุผนัง</h2>
+                    <p class="qs-sub" data-i18n="texture.modal.sub">ตั้งค่าไฟล์ diff (สี), disp (ความสูงผิว), nor_gl (ทิศทางผิว แบบ OpenGL), rough (ความหยาบ) ต่อวัสดุแต่ละชนิด รองรับ .png .jpg .jpeg .webp และ .exr</p>
+                </div>
+                <button class="win-btn btn-close" id="texture-modal-close">×</button>
+            </div>
+            <div id="texture-material-list"></div>
+            <h3 class="mt-md" data-i18n="texture.addNewMaterial.heading">+ เพิ่มวัสดุผนังชนิดใหม่</h3>
+            <p class="outliner-hint" data-i18n="texture.addNewMaterial.hint">วัสดุใหม่จะเริ่มด้วยสูตร BOQ แบบพื้นที่ผนัง (ตร.ม.) ทั่วไปก่อน ปรับสูตรเฉพาะทีหลังได้ถ้าต้องการ</p>
+            <div class="pos-row">
+                <input type="text" id="inp-new-mat-label" data-i18n-placeholder="placeholder.materialName" placeholder="ชื่อวัสดุ เช่น ผนังไม้ระแนง">
+                <input type="color" id="inp-new-mat-color" value="#9a9d93" style="width:44px; padding:2px;">
+            </div>
+            <button id="btn-add-new-material" class="action-btn mt-sm" data-i18n="texture.addNewMaterial.btn">เพิ่มวัสดุใหม่</button>
+        </div>
+    </div>
+
+    <!-- 9. แถบสถานะด้านล่าง (Status Bar) -->
+    <div id="statusbar">
+        <span id="status-floor"></span>
+        <span id="status-objects"></span>
+        <span id="status-selected"></span>
+        <span id="status-pos"></span>
+    </div>
+
+    <!-- Script หลัก -->
+    <script type="module" src="script.js"></script>
+</body>
+
+</html>
