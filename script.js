@@ -33,7 +33,7 @@ import { CutTool } from './src/ui/build/CutTool.js';
 import { CutGraphRenderer } from './src/scene/CutGraphRenderer.js';
 import { Events } from './src/core/EventBus.js';
 import { distanceXZ } from './src/core/MathUtils.js';
-import { t, initI18n, setLanguage, getLanguage, detectDefaultLanguage, onLanguageChange } from './src/i18n/i18n.js';
+import { t, tData, initI18n, setLanguage, getLanguage, detectDefaultLanguage, onLanguageChange } from './src/i18n/i18n.js';
 
 // --- 1. SECURITY ---
 document.addEventListener('contextmenu', event => event.preventDefault());
@@ -142,7 +142,7 @@ onLanguageChange(() => {
     try {
         const calcEl = document.getElementById('calc-result-content');
         if (calcEl && !calcEl.querySelector('.calc-placeholder') && typeof window.performCalcAll === 'function') {
-            window.performCalcAll();
+            (typeof lastBOQRefresh === 'function' ? lastBOQRefresh : window.performCalcAll)();
         }
     } catch (e) { /* not ready yet, skip */ }
 });
@@ -208,8 +208,8 @@ function updateTaskbar() {
 // --- SIDE NAV (UI only): switches which section of #panel-tools is shown.
 // No scene logic; sections are plain DOM show/hide, buttons keep their IDs/handlers.
 const SNAV_SECTIONS = {
-    build: 'สร้างแบบจำลอง', mat: 'วัสดุและพื้นผิว', floors: 'ชั้นและโครงสร้าง',
-    props: 'คุณสมบัติวัตถุ', proj: 'จัดการโครงการ'
+    build: 'snavSection.build', mat: 'snavSection.mat', floors: 'snavSection.floors',
+    props: 'snavSection.props', proj: 'snavSection.proj'
 };
 let snavCurrent = 'build';
 function snavShowSection(name) {
@@ -221,9 +221,13 @@ function snavShowSection(name) {
     const home = document.getElementById('material-tabs-home');
     const slot = document.getElementById('material-tabs-mat-slot');
     if (mt && home && slot) (name === 'mat' ? slot : home).appendChild(mt);
-    const t = document.querySelector('#panel-tools-header .win-title');
-    if (t) { t.removeAttribute('data-i18n'); t.textContent = SNAV_SECTIONS[name] || t.textContent; }
+    const titleEl = document.querySelector('#panel-tools-header .win-title');
+    if (titleEl) { titleEl.removeAttribute('data-i18n'); titleEl.textContent = SNAV_SECTIONS[name] ? t(SNAV_SECTIONS[name]) : titleEl.textContent; }
 }
+onLanguageChange(() => {
+    const titleEl = document.querySelector('#panel-tools-header .win-title');
+    if (titleEl && !titleEl.hasAttribute('data-i18n') && SNAV_SECTIONS[snavCurrent]) titleEl.textContent = t(SNAV_SECTIONS[snavCurrent]);
+});
 window.snavActivate = function (name) {
     if (!SNAV_SECTIONS[name]) { window.snavSync(); return; }
     const panel = document.getElementById('panel-tools');
@@ -861,8 +865,8 @@ function refreshFloorSwitcher() {
     parametric.floorManager.listFloors().forEach(floor => {
         const btn = document.createElement('button');
         btn.className = 'material-tab' + (floor.id === parametric.floorManager.activeFloorId ? ' active' : '');
-        btn.textContent = floor.name;
-        btn.title = `ระดับพื้น: ${floor.elevation.toFixed(2)} ม. | สูง: ${floor.height.toFixed(2)} ม.`;
+        btn.textContent = tData(floor.name);
+        btn.title = t('floors.tooltip', { elev: floor.elevation.toFixed(2), h: floor.height.toFixed(2) });
         btn.addEventListener('click', () => {
             const wasActive = floor.id === parametric.floorManager.activeFloorId;
             parametric.floorManager.setActiveFloor(floor.id);
@@ -915,10 +919,10 @@ parametric.buildingModel.events.on(Events.ACTIVE_FLOOR_CHANGED, applyFloorLayerV
 
 document.getElementById('btn-add-floor')?.addEventListener('click', () => {
     const floorCount = parametric.floorManager.listFloors().length;
-    const input = window.prompt('ความสูงของชั้นใหม่ (เมตร)', '3.0');
+    const input = window.prompt(t('floors.promptHeight'), '3.0');
     if (input === null) return; // ผู้ใช้กดยกเลิก
     const height = parseFloat(input);
-    if (!(height > 0)) { alert('กรุณาใส่ความสูงเป็นตัวเลขมากกว่า 0'); return; }
+    if (!(height > 0)) { alert(t('floors.alertInvalidHeight')); return; }
     const floor = parametric.floorManager.addFloor({ name: `ชั้น ${floorCount + 1}`, height });
     parametric.floorManager.setActiveFloor(floor.id);
     refreshFloorSwitcher();
@@ -1056,7 +1060,7 @@ document.getElementById('inp-land-plot-image')?.addEventListener('change', async
         rebuildLandPlotGrid();
         refreshLandPlotUI();
     } catch (err) {
-        alert('อัปโหลดภาพเขตที่ดินไม่สำเร็จ: ' + err.message);
+        alert(t('landplot.alertUploadFail', { msg: tData(err.message) }));
     }
 });
 
@@ -1098,7 +1102,7 @@ document.querySelectorAll('#landplot-edit-modes [data-landplot-mode]').forEach(b
 });
 
 document.getElementById('btn-landplot-remove')?.addEventListener('click', () => {
-    if (!confirm('ลบภาพเขตที่ดินของชั้นนี้?')) return;
+    if (!confirm(t('landplot.confirmRemove'))) return;
     setLandPlotEditing(false);
     const floor = parametric.floorManager.getActiveFloor();
     if (floor) floor.landPlotImage = null;
@@ -1256,7 +1260,7 @@ document.getElementById('btn-cut-undo')?.addEventListener('click', () => {
 });
 
 document.getElementById('btn-cut-reset')?.addEventListener('click', () => {
-    if (!confirm('ล้างเส้นตัดทั้งหมดของชั้นนี้ และตั้งขอบเขตใหม่จากภาพ/กริดปัจจุบัน?')) return;
+    if (!confirm(t('cut.confirmReset'))) return;
     const b = getFloorBoundsForCut();
     cutGraph.setBoundaryRect(b.minX, b.minZ, b.maxX, b.maxZ);
     extrudedFaceIds = new Set(); // ล้างเส้นแล้ว ช่องเก่าไม่มีอยู่จริงอีกต่อไป เริ่มนับใหม่
@@ -1455,9 +1459,9 @@ function updateStatusBar() {
 
     try {
         const floor = parametric?.floorManager?.getActiveFloor?.();
-        elFloor.textContent = floor ? `${t('statusbar.floor')}: ${floor.name}` : '';
+        elFloor.textContent = floor ? `${t('statusbar.floor')}: ${tData(floor.name)}` : '';
         const badge = document.getElementById('viewport-floor-badge');
-        if (badge) badge.textContent = floor ? floor.name : '';
+        if (badge) badge.textContent = floor ? tData(floor.name) : '';
     } catch (e) { elFloor.textContent = ''; }
 
     elObjects.textContent = `${t('statusbar.objects')}: ${objects.length}`;
@@ -1567,7 +1571,7 @@ function renderMaterialTabs(containerId, activeId, onSelect) {
         swatch.style.background = '#' + mat.color.toString(16).padStart(6, '0');
 
         const label = document.createElement('span');
-        label.textContent = mat.label;
+        label.textContent = tData(mat.label);
 
         btn.appendChild(swatch);
         btn.appendChild(label);
@@ -1584,10 +1588,10 @@ function refreshNewMaterialTabs() {
 
 // --- ข้อ 6: TEXTURE MANAGER UI — เพิ่ม/ตั้งค่า texture (diff/disp/nor_gl/rough) ต่อวัสดุ ---
 const TEX_SLOTS = [
-    { key: 'diff', label: 'diff (สี/ลาย)', accept: '.png,.jpg,.jpeg,.webp,.exr' },
-    { key: 'disp', label: 'disp (ความสูงผิว)', accept: '.png,.jpg,.jpeg,.webp,.exr' },
-    { key: 'nor_gl', label: 'nor_gl (ทิศทางผิว, OpenGL)', accept: '.exr,.png,.jpg,.jpeg' },
-    { key: 'rough', label: 'rough (ความหยาบ)', accept: '.exr,.png,.jpg,.jpeg' },
+    { key: 'diff', get label() { return t('texture.slot.diff'); }, accept: '.png,.jpg,.jpeg,.webp,.exr' },
+    { key: 'disp', get label() { return t('texture.slot.disp'); }, accept: '.png,.jpg,.jpeg,.webp,.exr' },
+    { key: 'nor_gl', get label() { return t('texture.slot.nor_gl'); }, accept: '.exr,.png,.jpg,.jpeg' },
+    { key: 'rough', get label() { return t('texture.slot.rough'); }, accept: '.exr,.png,.jpg,.jpeg' },
 ];
 let openTextureMatId = null; // แถวที่กางอยู่ตอนนี้ (กางได้ทีละแถว)
 
@@ -1638,12 +1642,12 @@ function renderTextureManager() {
         swatch.className = 'material-swatch';
         swatch.style.background = '#' + mat.color.toString(16).padStart(6, '0');
         const label = document.createElement('span');
-        label.textContent = mat.label + (mat.isCustom ? ' (กำหนดเอง)' : '');
+        label.textContent = tData(mat.label) + (mat.isCustom ? t('texture.customSuffix') : '');
         title.appendChild(swatch);
         title.appendChild(label);
         const status = document.createElement('span');
         status.className = 'tex-mat-row-status';
-        status.textContent = configuredCount > 0 ? `ตั้งค่าแล้ว ${configuredCount}/4` : 'ยังไม่ตั้งค่า';
+        status.textContent = configuredCount > 0 ? t('texture.status.configured', { n: configuredCount }) : t('texture.status.none');
         head.appendChild(title);
         head.appendChild(status);
         row.appendChild(head);
@@ -1673,7 +1677,7 @@ function renderTextureManager() {
                     reapplyTexturesForMaterial(id);
                     renderTextureManager();
                 } catch (err) {
-                    alert('อ่านไฟล์ texture ไม่สำเร็จ: ' + err.message);
+                    alert(t('texture.readFail', { msg: tData(err.message) }));
                 }
             });
             slotRow.appendChild(input);
@@ -1682,8 +1686,8 @@ function renderTextureManager() {
                     const cropBtn = document.createElement('button');
                     cropBtn.type = 'button';
                     cropBtn.className = 'tex-crop-btn';
-                    cropBtn.textContent = 'เลือกพื้นที่ภาพ';
-                    cropBtn.title = 'ปรับกรอบ 4 มุมเพื่อเลือกพื้นที่ภาพที่จะใช้';
+                    cropBtn.textContent = t('texture.crop.btn');
+                    cropBtn.title = t('texture.crop.btn.title');
                     cropBtn.addEventListener('click', async () => {
                         const cropped = await openTextureCropTool(tex[slot.key]);
                         if (!cropped) return; // ยกเลิก — คงค่าเดิมไว้
@@ -1696,7 +1700,7 @@ function renderTextureManager() {
                 const clearBtn = document.createElement('button');
                 clearBtn.type = 'button';
                 clearBtn.className = 'tex-clear-btn';
-                clearBtn.textContent = 'ล้าง';
+                clearBtn.textContent = t('texture.clear');
                 clearBtn.addEventListener('click', () => {
                     setMaterialTextures(id, { [slot.key]: null });
                     reapplyTexturesForMaterial(id);
@@ -1717,15 +1721,15 @@ function renderTextureManager() {
         const repeatXInput = document.createElement('input');
         repeatXInput.type = 'number'; repeatXInput.step = '0.1'; repeatXInput.min = '0.1';
         repeatXInput.value = tex.repeatX ?? 1;
-        repeatXInput.title = 'ขนาดลายแนวนอน (เมตรต่อผืน)';
+        repeatXInput.title = t('texture.repeatX.title');
         const repeatYInput = document.createElement('input');
         repeatYInput.type = 'number'; repeatYInput.step = '0.1'; repeatYInput.min = '0.1';
         repeatYInput.value = tex.repeatY ?? 1;
-        repeatYInput.title = 'ขนาดลายแนวตั้ง (เมตรต่อผืน)';
+        repeatYInput.title = t('texture.repeatY.title');
         const dispScaleInput = document.createElement('input');
         dispScaleInput.type = 'number'; dispScaleInput.step = '0.01'; dispScaleInput.min = '0';
         dispScaleInput.value = tex.dispScale ?? 0.05;
-        dispScaleInput.title = 'ความลึก displacement (ม.)';
+        dispScaleInput.title = t('texture.dispScale.title');
         const applyRepeat = () => {
             setMaterialTextures(id, {
                 repeatX: parseFloat(repeatXInput.value) || 1,
@@ -1737,11 +1741,11 @@ function renderTextureManager() {
         repeatXInput.addEventListener('change', applyRepeat);
         repeatYInput.addEventListener('change', applyRepeat);
         dispScaleInput.addEventListener('change', applyRepeat);
-        repeatRow.appendChild(document.createTextNode('ขนาดลาย X (ม.)'));
+        repeatRow.appendChild(document.createTextNode(t('texture.repeatX.label')));
         repeatRow.appendChild(repeatXInput);
-        repeatRow.appendChild(document.createTextNode('Y (ม.)'));
+        repeatRow.appendChild(document.createTextNode(t('texture.repeatY.label')));
         repeatRow.appendChild(repeatYInput);
-        repeatRow.appendChild(document.createTextNode('ลึก disp (ม.)'));
+        repeatRow.appendChild(document.createTextNode(t('texture.dispScale.label')));
         repeatRow.appendChild(dispScaleInput);
         body.appendChild(repeatRow);
 
@@ -1752,7 +1756,7 @@ function renderTextureManager() {
             clearAllBtn.type = 'button';
             clearAllBtn.className = 'calc-btn';
             clearAllBtn.style.background = 'var(--danger)';
-            clearAllBtn.textContent = 'ล้าง texture ทั้งหมดของวัสดุนี้';
+            clearAllBtn.textContent = t('texture.clearAll');
             clearAllBtn.addEventListener('click', () => {
                 clearMaterialTextures(id);
                 reapplyTexturesForMaterial(id);
@@ -1764,9 +1768,9 @@ function renderTextureManager() {
             const delBtn = document.createElement('button');
             delBtn.type = 'button';
             delBtn.className = 'btn-danger';
-            delBtn.textContent = 'ลบวัสดุนี้';
+            delBtn.textContent = t('texture.deleteMaterial');
             delBtn.addEventListener('click', () => {
-                if (!confirm(`ลบวัสดุ "${mat.label}" ทิ้งหรือไม่? ชิ้นงานที่ใช้วัสดุนี้อยู่จะไม่ถูกลบ แต่จะกลับไปแสดงเป็นวัสดุตั้งต้นแทน`)) return;
+                if (!confirm(t('texture.confirmDelete', { name: tData(mat.label) }))) return;
                 removeCustomMaterial(id);
                 refreshMaterialsRegistry();
                 if (selectedNewMaterial === id) selectedNewMaterial = DEFAULT_MATERIAL;
@@ -1792,7 +1796,7 @@ document.getElementById('btn-add-new-material')?.addEventListener('click', () =>
     const labelInput = document.getElementById('inp-new-mat-label');
     const colorInput = document.getElementById('inp-new-mat-color');
     const label = (labelInput?.value || '').trim();
-    if (!label) { alert('กรุณาใส่ชื่อวัสดุก่อน'); return; }
+    if (!label) { alert(t('texture.needName')); return; }
     const id = 'custom_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const color = parseInt((colorInput?.value || '#9a9d93').replace('#', ''), 16);
     addCustomMaterial(id, { label, color });
@@ -2050,7 +2054,7 @@ function duplicateObjectNode(obj) {
         const newWall = parametric.duplicateWallUndoable(obj.userData.parametricWallId);
         // The new mesh arrives via onWallMeshCreated (pushes to `objects`,
         // refreshes the list, and selects it) — nothing else to do here.
-        if (!newWall) alert('คัดลอกผนังนี้ไม่สำเร็จ');
+        if (!newWall) alert(t('alert.copyWallFail'));
         return;
     }
     pushUndo();
@@ -2183,7 +2187,7 @@ function renderObjectNode(obj, container, depth) {
         const tri = document.createElement('span');
         tri.className = 'tri-toggle' + (obj.userData.collapsed ? '' : ' expanded');
         tri.innerHTML = ICN.chevron;
-        tri.title = obj.userData.collapsed ? 'ขยายกลุ่ม' : 'ยุบกลุ่ม';
+        tri.title = obj.userData.collapsed ? t('layer.expand') : t('layer.collapse');
         tri.onclick = (e) => { e.stopPropagation(); toggleCollapse(obj); };
         rowMain.appendChild(tri);
     } else {
@@ -2196,21 +2200,21 @@ function renderObjectNode(obj, container, depth) {
     chk.type = 'checkbox';
     chk.className = 'multi-chk';
     chk.checked = multiSelected.has(obj);
-    chk.title = 'ติ๊กเพื่อเลือกไว้รวมกลุ่ม';
+    chk.title = t('layer.tick');
     chk.onclick = (e) => { e.stopPropagation(); toggleMultiSelect(obj); };
     rowMain.appendChild(chk);
 
     const eyeBtn = document.createElement('span');
     eyeBtn.className = 'icon-btn eye-btn' + (obj.visible ? '' : ' off');
     eyeBtn.innerHTML = obj.visible ? ICN.eye : ICN.eyeOff;
-    eyeBtn.title = obj.visible ? 'คลิกเพื่อซ่อน' : 'คลิกเพื่อแสดง';
+    eyeBtn.title = obj.visible ? t('layer.hide') : t('layer.show');
     eyeBtn.onclick = (e) => { e.stopPropagation(); toggleVisible(obj); };
     rowMain.appendChild(eyeBtn);
 
     const lockBtn = document.createElement('span');
     lockBtn.className = 'icon-btn lock-btn' + (isLocked(obj) ? ' on' : '');
     lockBtn.innerHTML = isLocked(obj) ? ICN.lock : ICN.unlock;
-    lockBtn.title = isLocked(obj) ? 'ปลดล็อก' : 'ล็อกชิ้นนี้';
+    lockBtn.title = isLocked(obj) ? t('layer.unlock') : t('layer.lock');
     lockBtn.onclick = (e) => { e.stopPropagation(); toggleLock(obj); };
     rowMain.appendChild(lockBtn);
 
@@ -2223,8 +2227,8 @@ function renderObjectNode(obj, container, depth) {
     nameSpan.className = 'obj-name';
     const suffix = obj.isGroup
         ? ` (${obj.children.length})`
-        : ` · ${MATERIALS[getMaterialId(obj)].label}`;
-    nameSpan.textContent = `${obj.userData.name}${suffix}`;
+        : ` · ${tData(MATERIALS[getMaterialId(obj)].label)}`;
+    nameSpan.textContent = `${tData(obj.userData.name)}${suffix}`;
     nameSpan.ondblclick = (e) => {
         e.stopPropagation();
         if (isLocked(obj)) return;
@@ -2264,15 +2268,15 @@ function renderObjectNode(obj, container, depth) {
         return btn;
     };
 
-    iconsDiv.appendChild(mkIcon(ICN.toFront, 'ย้ายไว้หน้าสุด (Bring to Front)', () => moveObjectToEdge(obj, true)));
-    iconsDiv.appendChild(mkIcon(ICN.up, 'ย้ายขึ้น', () => moveObjectOrder(obj, -1)));
-    iconsDiv.appendChild(mkIcon(ICN.down, 'ย้ายลง', () => moveObjectOrder(obj, 1)));
-    iconsDiv.appendChild(mkIcon(ICN.toBack, 'ย้ายไว้หลังสุด (Send to Back)', () => moveObjectToEdge(obj, false)));
-    iconsDiv.appendChild(mkIcon(ICN.duplicate, 'คัดลอกชิ้นนี้ (Duplicate Layer)', () => duplicateObjectNode(obj)));
+    iconsDiv.appendChild(mkIcon(ICN.toFront, t('layer.toFront'), () => moveObjectToEdge(obj, true)));
+    iconsDiv.appendChild(mkIcon(ICN.up, t('layer.up'), () => moveObjectOrder(obj, -1)));
+    iconsDiv.appendChild(mkIcon(ICN.down, t('layer.down'), () => moveObjectOrder(obj, 1)));
+    iconsDiv.appendChild(mkIcon(ICN.toBack, t('layer.toBack'), () => moveObjectToEdge(obj, false)));
+    iconsDiv.appendChild(mkIcon(ICN.duplicate, t('layer.duplicate'), () => duplicateObjectNode(obj)));
     if (obj.isGroup) {
-        iconsDiv.appendChild(mkIcon(ICN.ungroup, 'แยกกลุ่ม', () => { selectObject(obj); ungroupSelected(); }));
+        iconsDiv.appendChild(mkIcon(ICN.ungroup, t('layer.ungroup'), () => { selectObject(obj); ungroupSelected(); }));
     }
-    iconsDiv.appendChild(mkIcon(ICN.trash, 'ลบชิ้นนี้', () => deleteObjectNode(obj), 'danger-hover'));
+    iconsDiv.appendChild(mkIcon(ICN.trash, t('layer.delete'), () => deleteObjectNode(obj), 'danger-hover'));
 
     li.appendChild(iconsDiv);
     container.appendChild(li);
@@ -2306,7 +2310,7 @@ function clearAllObjects() {
 }
 
 document.getElementById('btn-clear-all')?.addEventListener('click', () => {
-    if (confirm("คุณต้องการล้างฉากทั้งหมดใช่หรือไม่?")) {
+    if (confirm(t('confirm.clearAll'))) {
         clearAllObjects();
     }
 });
@@ -2379,7 +2383,7 @@ function deactivateAllParametricTools() {
     document.getElementById('btn-parametric-door-tool')?.classList.remove('active');
     document.getElementById('btn-parametric-window-tool')?.classList.remove('active');
     const wallBtn = document.getElementById('btn-parametric-wall-tool');
-    if (wallBtn) wallBtn.textContent = 'วาดผนัง (คลิก-ลาก-ปล่อย)';
+    if (wallBtn) wallBtn.textContent = t('tools.parametricWall.draw');
 }
 
 document.getElementById('btn-parametric-wall-tool')?.addEventListener('click', (e) => {
@@ -2394,7 +2398,7 @@ document.getElementById('btn-parametric-wall-tool')?.addEventListener('click', (
         orbit.mouseButtons.LEFT = null;
         parametric.wallTool.activate();
         e.target.classList.add('active');
-        e.target.textContent = 'กำลังวาดผนัง... (คลิกอีกครั้งเพื่อหยุด)';
+        e.target.textContent = t('tools.parametricWall.drawing');
     }
 });
 
@@ -2552,18 +2556,18 @@ function summarizeMaterials(byMat, matIds) {
 // กล่องตั้งค่าค่าเผื่อสูญเสีย/พองตัว (ผลประเมินผู้เชี่ยวชาญ: ทั้งสองท่านเสนอให้ปรับได้ต่อวัสดุ)
 function buildBOQSettingsBox(matIds) {
     const st = getBoqSettings();
-    const inputs = matIds.map(id => `<label class="boq-set-row"><span class="boq-set-label">${MATERIALS[id].label}</span>
+    const inputs = matIds.map(id => `<label class="boq-set-row"><span class="boq-set-label">${tData(MATERIALS[id].label)}</span>
             <input type="number" min="0" max="100" step="0.5" value="${st.wastePct[id] || 0}" data-boq-waste="${id}"><span class="boq-set-unit">%</span></label>`).join('');
     return `<div class="boq-settings">
-        <div class="boq-summary-title">ค่าเผื่อและการปรับปริมาณ</div>
+        <div class="boq-summary-title">${t('boq.settings.title')}</div>
         ${inputs}
-        <label class="boq-set-row"><span class="boq-set-label">ตัวคูณทราย/หิน (พองตัว/หลวม)</span>
-            <input type="number" min="1" max="2" step="0.05" value="${st.sandStoneBulking}" data-boq-bulking><span class="boq-set-unit">เท่า</span></label>
+        <label class="boq-set-row"><span class="boq-set-label">${t('boq.settings.bulking')}</span>
+            <input type="number" min="1" max="2" step="0.05" value="${st.sandStoneBulking}" data-boq-bulking><span class="boq-set-unit">${t('boq.settings.times')}</span></label>
         <div class="boq-set-actions">
-            <button type="button" data-boq-preset>ใช้ค่าแนะนำ (5–7.5%)</button>
-            <button type="button" data-boq-reset>รีเซ็ตเป็น 0</button>
+            <button type="button" data-boq-preset>${t('boq.settings.preset')}</button>
+            <button type="button" data-boq-reset>${t('boq.settings.reset')}</button>
         </div>
-        <small class="boq-note">ปัดเศษหลังคูณค่าเผื่อ · ค่าแนะนำเป็นค่ากลางของช่วงที่ผู้ประเมินใช้ ไม่ใช่มาตรฐานอ้างอิง</small>
+        <small class="boq-note">${t('boq.settings.note')}</small>
     </div>`;
 }
 
@@ -2572,7 +2576,7 @@ function buildBOQReport(objList, label, topCount) {
     const matIds = Object.keys(byMat).filter(m => byMat[m].volume > 1e-9);
 
     if (matIds.length === 0) {
-        return `<div class="boq-empty">ยังไม่มีชิ้นงานสำหรับถอดปริมาณ</div>`;
+        return `<div class="boq-empty">${t('boq.empty')}</div>`;
     }
 
     let sections = '';
@@ -2581,55 +2585,51 @@ function buildBOQReport(objList, label, topCount) {
         const mat = MATERIALS[matId];
         const m = byMat[matId];
         const basisText = mat.basis === 'area'
-            ? `${m.area.toFixed(2)} ตร.ม.`
-            : `${m.volume.toFixed(3)} ลบ.ม.`;
+            ? `${m.area.toFixed(2)} ${tData('ตร.ม.')}`
+            : `${m.volume.toFixed(3)} ${tData('ลบ.ม.')}`;
         const rowsHtml = mat.components(m).map(r => `<tr>
-                <td>${r.name}</td>
+                <td>${tData(r.name)}</td>
                 <td class="qty">${fmtQty(r)}</td>
-                <td>${r.unit}</td>
+                <td>${tData(r.unit)}</td>
             </tr>`).join('');
 
         sections += `
             <div class="boq-material-section">
-                <h4 class="boq-material-title">${mat.label} — <span class="qty">${basisText} (${m.count} ชิ้น)</span></h4>
+                <h4 class="boq-material-title">${tData(mat.label)} — <span class="qty">${basisText} (${m.count} ${tData('ชิ้น')})</span></h4>
                 <table>
                     <thead>
-                        <tr><th>รายการวัสดุ</th><th style="text-align:right;">ปริมาณ</th><th>หน่วย</th></tr>
+                        <tr><th>${t('boq.col.item')}</th><th style="text-align:right;">${t('boq.col.qty')}</th><th>${t('boq.col.unit')}</th></tr>
                     </thead>
                     <tbody>
                         ${rowsHtml}
                     </tbody>
                 </table>
-                <small class="boq-note">* ${mat.note}</small>
+                <small class="boq-note">* ${tData(mat.note)}</small>
             </div>`;
     });
 
     // ตารางสรุปวัสดุรวม (รวมชนิดเดียวกันข้ามหมวด) — เอาไว้สั่งซื้อของได้เลย
     const summary = summarizeMaterials(byMat, matIds);
     const summaryRows = summary.map(r => `<tr>
-            <td>${r.name}</td>
+            <td>${tData(r.name)}</td>
             <td class="qty">${fmtQty(r)}</td>
-            <td>${r.unit}</td>
+            <td>${tData(r.unit)}</td>
         </tr>`).join('');
 
     return `
         <div class="boq-report">
             <h3 class="boq-report-title">${label}</h3>
-            <p class="boq-report-meta">ชิ้นงานหลัก: <strong>${topCount}</strong> | ปริมาตรรวม: <strong>${totalVolume.toFixed(3)}</strong> ลบ.ม. | จำนวนวัสดุ: <strong>${matIds.length}</strong> ชนิด</p>
+            <p class="boq-report-meta">${t('boq.meta', { top: topCount, vol: totalVolume.toFixed(3), types: matIds.length })}</p>
             ${buildBOQSettingsBox(matIds)}
             ${sections}
             <div class="boq-summary-box">
-                <div class="boq-summary-title">📋 สรุปวัสดุรวมทั้งโครงการ (สำหรับสั่งซื้อ)</div>
-                <table><thead><tr><th>รายการวัสดุ</th><th style="text-align:right;">ปริมาณรวม</th><th>หน่วย</th></tr></thead>
+                <div class="boq-summary-title">${t('boq.summary.project')}</div>
+                <table><thead><tr><th>${t('boq.col.item')}</th><th style="text-align:right;">${t('boq.col.totalQty')}</th><th>${t('boq.col.unit')}</th></tr></thead>
                     <tbody>${summaryRows}</tbody>
                 </table>
             </div>
             <small class="boq-reference">
-                <strong>มาตรฐานอ้างอิงค่าถอดวัสดุ</strong><br>
-                • งานคอนกรีต 1:2:4 — ใช้ค่าประมาณของโครงงาน (ปูน ~324 กก./ลบ.ม.) โดย มยผ. 1101-64 (กรมโยธาธิการและผังเมือง) เป็นมาตรฐานงานคอนกรีต ไม่ได้ระบุชุดค่านี้โดยตรง<br>
-                • งานก่อ — อิฐมอญ ~130 ก้อน/ตร.ม. (ก่อครึ่งแผ่น, อยู่ในช่วง 130–145 ที่ มหาวิทยาลัยมหิดลระบุ), AAC 8.33 ก้อน/ตร.ม. (คิดจากขนาดก้อน 0.20×0.60 ม.), ส่วนอัตราปูน/ทรายและบล็อกเป็นค่าประมาณของโครงงาน ควรเทียบกับขนาดก้อนจริง<br>
-                • ปริมาณรวมค่าเผื่อสูญเสียตามที่ตั้งไว้ด้านบน (ค่าเริ่มต้น 0% = <strong>ยังไม่ได้เผื่อ</strong>) และยังไม่รวมวัสดุเสริม เช่น เหล็กเสริม ปูนเกราท์ งานฉาบ<br>
-                • รายงานนี้เป็นการ<strong>ถอดปริมาณวัสดุเบื้องต้น</strong> โปรดให้ผู้เชี่ยวชาญตรวจสอบก่อนนำไปใช้จริง
+                ${t('boq.reference.html')}
             </small>
         </div>
     `;
@@ -2645,34 +2645,34 @@ function renderParametricBOQReport(report) {
             const qtyText = r.decimals
                 ? r.qty.toLocaleString(undefined, { minimumFractionDigits: r.decimals, maximumFractionDigits: r.decimals })
                 : Math.round(r.qty).toLocaleString();
-            return `<tr><td>${r.name}</td><td class="qty">${qtyText}</td><td>${r.unit}</td></tr>`;
+            return `<tr><td>${tData(r.name)}</td><td class="qty">${qtyText}</td><td>${tData(r.unit)}</td></tr>`;
         }).join('');
         return `
             <div class="boq-material-section">
-                <h4 class="boq-material-title">${s.label} — <span class="qty">${s.basisValue.toFixed(2)} ${s.basisUnit} (${s.elementCount} ชิ้น)</span></h4>
+                <h4 class="boq-material-title">${tData(s.label)} — <span class="qty">${s.basisValue.toFixed(2)} ${tData(s.basisUnit)} (${s.elementCount} ${tData('ชิ้น')})</span></h4>
                 <table>
-                    <thead><tr><th>รายการวัสดุ</th><th style="text-align:right;">ปริมาณ</th><th>หน่วย</th></tr></thead>
+                    <thead><tr><th>${t('boq.col.item')}</th><th style="text-align:right;">${t('boq.col.qty')}</th><th>${t('boq.col.unit')}</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
-                <small class="boq-note">* ${s.note}</small>
+                <small class="boq-note">* ${tData(s.note)}</small>
             </div>`;
     }).join('');
     const summaryRows = report.summaryRows.map(r => {
         const qtyText = r.decimals
             ? r.qty.toLocaleString(undefined, { minimumFractionDigits: r.decimals, maximumFractionDigits: r.decimals })
             : Math.round(r.qty).toLocaleString();
-        return `<tr><td>${r.name}</td><td class="qty">${qtyText}</td><td>${r.unit}</td></tr>`;
+        return `<tr><td>${tData(r.name)}</td><td class="qty">${qtyText}</td><td>${tData(r.unit)}</td></tr>`;
     }).join('');
     const warnings = report.warnings.length
         ? `<small class="boq-note">⚠ ${report.warnings.join(' ')}</small>` : '';
     return `
         <div class="boq-report">
-            <h3 class="boq-report-title">${report.label}</h3>
-            <p class="boq-report-meta">ผนังพาราเมตริก: <strong>${report.elementCount}</strong> | ปริมาตรรวม: <strong>${report.totalVolume.toFixed(3)}</strong> ลบ.ม. | จำนวนวัสดุ: <strong>${report.materialTypeCount}</strong> ชนิด</p>
+            <h3 class="boq-report-title">${tData(report.label)}</h3>
+            <p class="boq-report-meta">${t('boq.metaParametric', { top: report.elementCount, vol: report.totalVolume.toFixed(3), types: report.materialTypeCount })}</p>
             ${sections}
             <div class="boq-summary-box">
-                <div class="boq-summary-title">📋 สรุปวัสดุรวม (ผนังพาราเมตริก)</div>
-                <table><thead><tr><th>รายการวัสดุ</th><th style="text-align:right;">ปริมาณรวม</th><th>หน่วย</th></tr></thead>
+                <div class="boq-summary-title">${t('boq.summary.parametric')}</div>
+                <table><thead><tr><th>${t('boq.col.item')}</th><th style="text-align:right;">${t('boq.col.totalQty')}</th><th>${t('boq.col.unit')}</th></tr></thead>
                     <tbody>${summaryRows}</tbody>
                 </table>
             </div>
@@ -2700,7 +2700,7 @@ document.addEventListener('click', (e) => {
 window.performCalcAll = function () {
     const visible = objects.filter(o => o.visible);
     const el = document.getElementById('calc-result-content');
-    const legacyHtml = buildBOQReport(visible, 'สรุปถอดปริมาณวัสดุ (ทั้งโปรเจค)', visible.length);
+    const legacyHtml = buildBOQReport(visible, t('boq.title.project'), visible.length);
     const parametricReport = parametric.calculateBOQ();
     const parametricHtml = renderParametricBOQReport(parametricReport);
     // ถ้ามีแต่ผนังพาราเมตริก (legacy ว่าง) ให้แสดงกล่องตั้งค่านำหน้า เพื่อไม่ให้ปรับค่าเผื่อไม่ได้
@@ -2712,7 +2712,7 @@ window.performCalcAll = function () {
 
 window.calcSelectedObject = function () {
     if (!selectedObject) {
-        alert("กรุณาเลือกชิ้นงานหรือกลุ่มก่อน");
+        alert(t('alert.selectObjectOrGroup'));
         return;
     }
     const topCount = selectedObject.isGroup ? selectedObject.children.length : 1;
@@ -2725,14 +2725,14 @@ window.calcSelectedObject = function () {
     }
     const el = document.getElementById('calc-result-content');
     lastBOQRefresh = () => window.calcSelectedObject();
-    if (el) el.innerHTML = buildBOQReport([selectedObject], `คำนวณเฉพาะ: ${selectedObject.userData.name}`, topCount);
+    if (el) el.innerHTML = buildBOQReport([selectedObject], t('boq.title.selected', { name: tData(selectedObject.userData.name) }), topCount);
 };
 
 document.getElementById('btn-calc-selected')?.addEventListener('click', () => window.calcSelectedObject());
 
 document.getElementById('btn-calc-ticked')?.addEventListener('click', () => {
     if (multiSelected.size === 0) {
-        alert('กรุณาติ๊ก ☑ เลือกชิ้นงานอย่างน้อย 1 รายการก่อน');
+        alert(t('alert.tickAtLeast1'));
         return;
     }
     const picked = Array.from(multiSelected);
@@ -2741,7 +2741,7 @@ document.getElementById('btn-calc-ticked')?.addEventListener('click', () => {
     if (panel) { panel.style.display = 'flex'; bringToFront(panel); updateTaskbar(); }
     const el = document.getElementById('calc-result-content');
     lastBOQRefresh = () => document.getElementById('btn-calc-ticked')?.click();
-    if (el) el.innerHTML = buildBOQReport(picked, `ถอดปริมาณตามที่ติ๊ก (${picked.length} รายการ)`, topCount);
+    if (el) el.innerHTML = buildBOQReport(picked, t('boq.title.ticked', { n: picked.length }), topCount);
 });
 
 function updateRealtimeCalc() {
@@ -3200,7 +3200,7 @@ function syncMaterialDropdown(obj) {
 }
 
 document.getElementById('btn-duplicate')?.addEventListener('click', () => {
-    if (!selectedObject) { alert('กรุณาเลือกชิ้นงานก่อน'); return; }
+    if (!selectedObject) { alert(t('alert.selectObjectFirst')); return; }
     copySelected();
     pasteClipboard();
 });
@@ -3212,7 +3212,7 @@ document.getElementById('btn-new-group')?.addEventListener('click', () => {
 document.getElementById('btn-group-selected')?.addEventListener('click', () => {
     const list = Array.from(multiSelected);
     if (list.length < 2) {
-        alert('กรุณาติ๊ก ☑ เลือกชิ้นงานอย่างน้อย 2 ชิ้นในลิสต์ก่อน แล้วค่อยกด "รวมกลุ่มที่ติ๊ก"\n(หรือจะ Shift+ลากครอบในพื้นที่ 3 มิติก็ได้เช่นกัน)');
+        alert(t('alert.tickAtLeast2'));
         return;
     }
     createGroupFromObjects(list);
@@ -3221,7 +3221,7 @@ document.getElementById('btn-group-selected')?.addEventListener('click', () => {
 
 document.getElementById('btn-ungroup-selected')?.addEventListener('click', () => {
     if (!selectedObject || !selectedObject.isGroup) {
-        alert('กรุณาคลิกเลือกกลุ่มที่ต้องการแยกในลิสต์ก่อน');
+        alert(t('alert.selectGroupToUngroup'));
         return;
     }
     ungroupSelected();
@@ -3306,7 +3306,7 @@ document.getElementById('file-load-project')?.addEventListener('change', (e) => 
             syncLandPlotOverlayToActiveFloor();
             syncCutGraphToActiveFloor();
         } catch (err) {
-            alert('เปิดไฟล์ไม่สำเร็จ: ' + err.message);
+            alert(t('alert.openFail', { msg: tData(err.message) }));
         }
         e.target.value = '';
     };

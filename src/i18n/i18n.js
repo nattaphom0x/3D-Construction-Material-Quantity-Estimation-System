@@ -12,7 +12,7 @@
  *   el.textContent = t('taskbar.tools');       // anywhere text is needed
  *   setLanguage('en');                         // on user action — persist yourself in the callback
  */
-import { translations } from './translations.js';
+import { translations, dataTerms } from './translations.js';
 
 const SUPPORTED_LANGUAGES = Object.keys(translations); // ['th', 'en']
 const FALLBACK_LANGUAGE = 'th';
@@ -119,4 +119,26 @@ export function applyTranslations(root) {
     if (root === undefined) {
         document.title = t('app.title');
     }
+}
+
+/**
+ * Translate a BUILT-IN data string for display only (material names, BOQ rows/notes,
+ * units, default object names such as "ผนัง 1a2b" / "Floor 2", internal error messages).
+ * Stored/aggregation values are never altered. Unknown strings (e.g. names the user
+ * typed) are returned unchanged.
+ */
+export function tData(text) {
+    if (typeof text !== 'string' || !text) return text;
+    const map = dataTerms[currentLanguage === 'en' ? 'thToEn' : 'enToTh'] || {};
+    if (Object.prototype.hasOwnProperty.call(map, text)) return map[text];
+    let m;
+    if (currentLanguage === 'en') {
+        if ((m = /^ชั้น (\d+)$/.exec(text))) return `Floor ${m[1]}`;
+        if ((m = /^ผนัง (\S+)$/.exec(text))) return `Wall ${m[1]}`;
+    } else {
+        if ((m = /^Floor (\d+)$/.exec(text))) return `ชั้น ${m[1]}`;
+        if ((m = /^Wall (\S+)$/.exec(text))) return `ผนัง ${m[1]}`;
+        if ((m = /^Wall length ([\d.]+)m is below minimum ([\d.]+)m$/.exec(text))) return `ความยาวผนัง ${m[1]} ม. สั้นกว่าค่าต่ำสุด ${m[2]} ม.`;
+    }
+    return text;
 }

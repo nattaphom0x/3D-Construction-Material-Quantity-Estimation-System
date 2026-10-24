@@ -21,54 +21,54 @@
 <body>
 
     <!-- SIDE NAV RAIL — floating tab bar, UI only, calls existing toggleWindow() -->
-    <div id="side-nav" aria-label="Navigation">
+    <div id="side-nav" aria-label="Navigation" data-i18n-aria-label="nav.aria">
         <div class="snav-tab snav-tab--build snav-active" id="snav-build"
-             onclick="snavActivate('build')" title="สร้างแบบจำลอง">
+             onclick="snavActivate('build')" title="สร้างแบบจำลอง" data-i18n-title="snav.build.title">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg>
-            <span>สร้าง</span>
+            <span data-i18n="snav.build.label">สร้าง</span>
         </div>
         <div class="snav-tab snav-tab--mat" id="snav-mat"
-             onclick="snavActivate('mat')" title="วัสดุ / Texture">
+             onclick="snavActivate('mat')" title="วัสดุ / Texture" data-i18n-title="snav.mat.title">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5v13M3.5 10h13"/></svg>
-            <span>วัสดุ</span>
+            <span data-i18n="snav.mat.label">วัสดุ</span>
         </div>
         <div class="snav-tab snav-tab--floors" id="snav-floors"
-             onclick="snavActivate('floors')" title="ชั้นและโครงสร้าง">
+             onclick="snavActivate('floors')" title="ชั้นและโครงสร้าง" data-i18n-title="snav.floors.title">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 14h14M3 10h14M3 6h14"/></svg>
-            <span>ชั้น</span>
+            <span data-i18n="snav.floors.label">ชั้น</span>
         </div>
         <div class="snav-tab snav-tab--props" id="snav-props"
-             onclick="snavActivate('props')" title="คุณสมบัติวัตถุ">
+             onclick="snavActivate('props')" title="คุณสมบัติวัตถุ" data-i18n-title="snav.props.title">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="3"/><path d="M10 3v2M10 15v2M3 10h2M15 10h2"/></svg>
-            <span>คุณสมบัติ</span>
+            <span data-i18n="snav.props.label">คุณสมบัติ</span>
         </div>
         <div class="snav-sep"></div>
         <div class="snav-tab snav-tab--boq" id="snav-boq"
-             onclick="toggleWindow('panel-calc');snavActivate('boq')" title="ถอดปริมาณ BOQ">
+             onclick="toggleWindow('panel-calc');snavActivate('boq')" title="ถอดปริมาณ BOQ" data-i18n-title="snav.boq.title">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="3" width="12" height="14" rx="1.5"/><path d="M7 7h6M7 10h6M7 13h4"/></svg>
             <span>BOQ</span>
         </div>
         <div class="snav-tab snav-tab--outliner" id="snav-outliner"
-             onclick="toggleWindow('panel-outliner');snavActivate('outliner')" title="รายการโครงสร้าง">
+             onclick="toggleWindow('panel-outliner');snavActivate('outliner')" title="รายการโครงสร้าง" data-i18n-title="snav.outliner.title">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 5h12M4 10h8M4 15h10"/></svg>
-            <span>รายการ</span>
+            <span data-i18n="snav.outliner.label">รายการ</span>
         </div>
         <div class="snav-sep"></div>
         <div class="snav-tab snav-tab--proj" id="snav-proj"
-             onclick="snavActivate('proj')" title="จัดการโครงการ">
+             onclick="snavActivate('proj')" title="จัดการโครงการ" data-i18n-title="snav.proj.title">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 16V8l6-5 6 5v8"/><path d="M8 16v-4h4v4"/></svg>
-            <span>โปรเจค</span>
+            <span data-i18n="snav.proj.label">โปรเจค</span>
         </div>
         <div class="snav-sep"></div>
         <div class="snav-tab snav-tab--settings" id="snav-settings"
-             onclick="toggleWindow('panel-settings')" title="ตั้งค่า">
+             onclick="toggleWindow('panel-settings')" title="ตั้งค่า" data-i18n-title="taskbar.settings">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M15.3 4.7l-1.6 1.6M6.3 13.7l-1.6 1.6"/></svg>
-            <span>ตั้งค่า</span>
+            <span data-i18n="taskbar.settings">ตั้งค่า</span>
         </div>
         <div class="snav-tab snav-tab--help" id="snav-help"
-             onclick="document.getElementById('quickstart').style.display='flex'" title="วิธีใช้">
+             onclick="document.getElementById('quickstart').style.display='flex'" title="วิธีใช้" data-i18n-title="taskbar.help">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7"/><path d="M7.9 8a2.2 2.2 0 1 1 3.3 1.9c-.8.5-1.2.9-1.2 1.8M10 14.3v.1"/></svg>
-            <span>วิธีใช้</span>
+            <span data-i18n="taskbar.help">วิธีใช้</span>
         </div>
     </div>
 
@@ -78,17 +78,17 @@
     <!-- 2. Taskbar ด้านบน -->
     <div id="taskbar">
         <div class="tb-group">
-            <button class="tb-icon" id="tb-undo" title="ย้อนกลับ (Ctrl+Z)" aria-label="Undo"
+            <button class="tb-icon" id="tb-undo" title="ย้อนกลับ (Ctrl+Z)" aria-label="Undo" data-i18n-title="toolbar.undo" data-i18n-aria-label="toolbar.undo"
                 onclick="window.dispatchEvent(new KeyboardEvent('keydown',{key:'z',ctrlKey:true,bubbles:true}))">
                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5 4 9l4 4"/><path d="M4 9h8a4 4 0 0 1 0 8H9"/></svg></button>
-            <button class="tb-icon" id="tb-redo" title="ทำซ้ำ (Ctrl+Y)" aria-label="Redo"
+            <button class="tb-icon" id="tb-redo" title="ทำซ้ำ (Ctrl+Y)" aria-label="Redo" data-i18n-title="toolbar.redo" data-i18n-aria-label="toolbar.redo"
                 onclick="window.dispatchEvent(new KeyboardEvent('keydown',{key:'y',ctrlKey:true,bubbles:true}))">
                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 5 4 4-4 4"/><path d="M16 9H8a4 4 0 0 0 0 8h3"/></svg></button>
             <span class="tb-vsep"></span>
-            <button class="tb-icon" id="tb-open" title="เปิดโปรเจค (.json)" aria-label="Open"
+            <button class="tb-icon" id="tb-open" title="เปิดโปรเจค (.json)" aria-label="Open" data-i18n-title="tools.project.load" data-i18n-aria-label="tools.project.load"
                 onclick="document.getElementById('btn-load-project')?.click()">
                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2.5 6c0-.8.6-1.4 1.4-1.4h3.4L9 6.5h7.1c.8 0 1.4.6 1.4 1.4v6.6c0 .8-.6 1.4-1.4 1.4H3.9c-.8 0-1.4-.6-1.4-1.4V6Z"/></svg></button>
-            <button class="tb-icon" id="tb-save" title="บันทึกโปรเจค (.json)" aria-label="Save"
+            <button class="tb-icon" id="tb-save" title="บันทึกโปรเจค (.json)" aria-label="Save" data-i18n-title="tools.project.save" data-i18n-aria-label="tools.project.save"
                 onclick="document.getElementById('btn-save-project')?.click()">
                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 3.5h9l3 3V16a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 4 16V3.5Z"/><path d="M7 3.5v4h5v-4M7 16.5v-5h6v5"/></svg></button>
         </div>
@@ -99,12 +99,12 @@
         <button id="tb-calc" class="task-btn tb-legacy" onclick="toggleWindow('panel-calc')" data-i18n="taskbar.calc">ถอดปริมาณวัสดุ (BOQ)</button>
         <button id="tb-settings" class="task-btn tb-legacy" onclick="toggleWindow('panel-settings')" data-i18n="taskbar.settings">ตั้งค่า</button>
         <button id="tb-help" class="task-btn tb-legacy" onclick="document.getElementById('quickstart').style.display='flex'" data-i18n="taskbar.help">วิธีใช้</button>
-        <div id="theme-switcher" class="theme-switcher" role="group" aria-label="Theme">
+        <div id="theme-switcher" class="theme-switcher" role="group" aria-label="Theme" data-i18n-aria-label="aria.theme">
             <button class="theme-btn" data-theme-choice="dark"><span class="theme-dot theme-dot--dark"></span></button>
             <button class="theme-btn" data-theme-choice="light"><span class="theme-dot theme-dot--light"></span></button>
             <button class="theme-btn" data-theme-choice="sky"><span class="theme-dot theme-dot--sky"></span></button>
         </div>
-        <div id="lang-switcher" class="lang-switcher" role="group" aria-label="Language">
+        <div id="lang-switcher" class="lang-switcher" role="group" aria-label="Language" data-i18n-aria-label="lang.selector.label">
             <button id="lang-btn-th" class="lang-btn active" data-lang="th">TH</button>
             <button id="lang-btn-en" class="lang-btn" data-lang="en">EN</button>
         </div>
@@ -146,15 +146,15 @@
                 <div id="opening-settings-panel" style="display:none">
                     <h4 data-i18n="tools.opening.doorHeading">ประตู — กว้าง / สูง / สูงจากพื้น (ม.)</h4>
                     <div class="pos-row">
-                        <input type="number" id="inp-door-w" step="0.05" min="0.1" title="กว้าง">
-                        <input type="number" id="inp-door-h" step="0.05" min="0.1" title="สูง">
-                        <input type="number" id="inp-door-sill" step="0.05" min="0" title="สูงจากพื้น">
+                        <input type="number" id="inp-door-w" step="0.05" min="0.1" title="กว้าง" data-i18n-title="dim.width">
+                        <input type="number" id="inp-door-h" step="0.05" min="0.1" title="สูง" data-i18n-title="dim.height">
+                        <input type="number" id="inp-door-sill" step="0.05" min="0" title="สูงจากพื้น" data-i18n-title="dim.sill">
                     </div>
                     <h4 data-i18n="tools.opening.windowHeading">หน้าต่าง — กว้าง / สูง / สูงจากพื้น (ม.)</h4>
                     <div class="pos-row">
-                        <input type="number" id="inp-window-w" step="0.05" min="0.1" title="กว้าง">
-                        <input type="number" id="inp-window-h" step="0.05" min="0.1" title="สูง">
-                        <input type="number" id="inp-window-sill" step="0.05" min="0" title="สูงจากพื้น">
+                        <input type="number" id="inp-window-w" step="0.05" min="0.1" title="กว้าง" data-i18n-title="dim.width">
+                        <input type="number" id="inp-window-h" step="0.05" min="0.1" title="สูง" data-i18n-title="dim.height">
+                        <input type="number" id="inp-window-sill" step="0.05" min="0" title="สูงจากพื้น" data-i18n-title="dim.sill">
                     </div>
                     <label class="outliner-hint" style="display:block"><input type="checkbox" id="chk-lock-sill" checked> <span data-i18n="tools.opening.lockSill">ล็อกความสูงจากพื้นให้เท่ากันทุกบาน (ชนิดเดียวกัน)</span></label>
                     <label class="outliner-hint" style="display:block"><input type="checkbox" id="chk-lock-head"> <span data-i18n="tools.opening.lockHead">ล็อกระดับหัวช่องให้เท่ากัน (สูงจากพื้น + ความสูง)</span></label>
@@ -183,10 +183,10 @@
 
             <!-- ══ SECTION: วัสดุ / Texture (mat) ══ -->
             <div class="snav-section snav-section--hidden" data-snav-section="mat">
-                <h3>วัสดุและพื้นผิว (Texture)</h3>
+                <h3 data-i18n="tools.materialsPanel.heading">วัสดุและพื้นผิว (Texture)</h3>
                 <div id="material-tabs-mat-slot"></div>
                 <button id="btn-manage-textures" class="action-btn" data-i18n="tools.manageTextures">จัดการพื้นผิว (Texture)</button>
-                <p class="outliner-hint">เลือกวัสดุที่ต้องการแล้วกดจัดการพื้นผิว เพื่อตั้งค่า Texture แต่ละชนิด</p>
+                <p class="outliner-hint" data-i18n="tools.materialsPanel.hint">เลือกวัสดุที่ต้องการแล้วกดจัดการพื้นผิว เพื่อตั้งค่า Texture แต่ละชนิด</p>
             </div>
 
             <!-- ══ SECTION: ชั้นและโครงสร้าง (floors) ══ -->
@@ -209,12 +209,12 @@
                     <h3 data-i18n="tools.openingEdit.heading">แก้ไขช่องเจาะที่เลือก</h3>
                     <h4 data-i18n="tools.openingEdit.offsetHeading">ตำแหน่งตามแนวผนัง / กว้าง / สูง / สูงจากพื้น (ม.)</h4>
                     <div class="pos-row">
-                        <input type="number" id="inp-open-offset" step="0.05" title="ระยะจากต้นผนัง">
-                        <input type="number" id="inp-open-w" step="0.05" min="0.1" title="กว้าง">
+                        <input type="number" id="inp-open-offset" step="0.05" title="ระยะจากต้นผนัง" data-i18n-title="dim.offset">
+                        <input type="number" id="inp-open-w" step="0.05" min="0.1" title="กว้าง" data-i18n-title="dim.width">
                     </div>
                     <div class="pos-row">
-                        <input type="number" id="inp-open-h" step="0.05" min="0.1" title="สูง">
-                        <input type="number" id="inp-open-sill" step="0.05" min="0" title="สูงจากพื้น">
+                        <input type="number" id="inp-open-h" step="0.05" min="0.1" title="สูง" data-i18n-title="dim.height">
+                        <input type="number" id="inp-open-sill" step="0.05" min="0" title="สูงจากพื้น" data-i18n-title="dim.sill">
                     </div>
                     <p class="outliner-hint" data-i18n="tools.openingEdit.hint">ลากคานเลื่อน หรือพิมพ์ตัวเลขตรง ๆ แล้วกด Enter/Tab — ระบบจะหักพื้นที่ผนังใหม่อัตโนมัติ</p>
                     <button id="btn-opening-delete" class="btn-danger mt-sm" data-i18n="tools.openingEdit.delete">ลบช่องเจาะนี้ (Alt+คลิกก็ได้)</button>
@@ -234,7 +234,7 @@
                     <button id="btn-duplicate" class="action-btn" data-i18n="tools.duplicate">คัดลอกชิ้นงานนี้ (Duplicate)</button>
                     <button id="btn-calc-selected" class="calc-btn mt-sm" data-i18n="tools.calcSelected">ถอดปริมาณเฉพาะชิ้น/กลุ่มนี้</button>
                 </div>
-                <p class="outliner-hint" style="margin-top:8px">คลิกเลือกวัตถุในฉากหรือรายการเพื่อดูคุณสมบัติ</p>
+                <p class="outliner-hint" style="margin-top:8px" data-i18n="tools.position.selectHint">คลิกเลือกวัตถุในฉากหรือรายการเพื่อดูคุณสมบัติ</p>
                 <button id="btn-clear-all" class="btn-danger mt-sm" data-i18n="tools.clearAll">ล้างฉากทั้งหมด (Clear All)</button>
             </div>
 
@@ -310,7 +310,7 @@
         </div>
         <div class="window-content">
             <h3 data-i18n="settings.theme.heading">ธีมสี</h3>
-            <div class="theme-options" role="group" aria-label="Theme">
+            <div class="theme-options" role="group" aria-label="Theme" data-i18n-aria-label="aria.theme">
                 <button class="theme-option" data-theme-choice="dark"><span class="theme-dot theme-dot--dark"></span><span data-i18n="settings.theme.dark">มืด</span></button>
                 <button class="theme-option" data-theme-choice="light"><span class="theme-dot theme-dot--light"></span><span data-i18n="settings.theme.light">สว่าง</span></button>
                 <button class="theme-option" data-theme-choice="sky"><span class="theme-dot theme-dot--sky"></span><span data-i18n="settings.theme.sky">ขาว-ฟ้า</span></button>
@@ -362,12 +362,12 @@
     </div>
 
     <!-- 6b. View Orientation Gizmo (top-right of viewport, camera nav only) -->
-    <div id="view-gizmo" aria-label="View orientation"></div>
+    <div id="view-gizmo" aria-label="View orientation" data-i18n-aria-label="aria.viewOrientation"></div>
     <!-- 6c. 2D/3D mode toggle — sits just under the gizmo. In 2D, free
          rotate is disabled (pan/zoom only); the gizmo's axis nodes still
          work to jump between the flat top/bottom/left/right/front/back
          views, only the diagonal isometric node is hidden (see CSS). -->
-    <div id="view-mode-toggle" aria-label="Toggle 2D/3D view">3D</div>
+    <div id="view-mode-toggle" aria-label="Toggle 2D/3D view" data-i18n-aria-label="aria.toggle2d3d">3D</div>
 
     <!-- 6. แถบเครื่องมือลอยกลางจอ (แบบ SketchUp) -->
     <div id="viewport-toolbar">
