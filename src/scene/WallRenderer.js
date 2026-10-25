@@ -46,6 +46,11 @@ export class WallRenderer {
         this.meshesByWallId.delete(wallId);
     }
 
+    /** ล้าง mesh ผนังทั้งหมด (ใช้ก่อนโหลดโปรเจกต์ — กัน mesh เก่าค้างใน map แล้วผนังที่ id ซ้ำไม่ถูกสร้างใหม่) */
+    clearAll() {
+        [...this.meshesByWallId.keys()].forEach(id => this._removeMesh(id));
+    }
+
     renderAll() {
         this.model.walls.forEach(wall => this._createOrUpdateMesh(wall));
     }

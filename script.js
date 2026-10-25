@@ -26,6 +26,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { CreateWallCommand } from './src/history/commands/CreateWallCommand.js';
 import { DeleteOpeningCommand } from './src/history/commands/OpeningCommands.js';
+import { FnCommand } from './src/history/commands/FnCommand.js';
 import { bootstrapParametricBuilding } from './src/app/AppBootstrap.js';
 import { LandPlotOverlay } from './src/scene/LandPlotOverlay.js';
 import { CutGraph } from './src/landplot/CutGraph.js';
@@ -180,6 +181,8 @@ window.toggleWindow = function (id) {
     } else {
         el.style.display = 'flex';
         bringToFront(el);
+        // เปิดหน้าต่าง BOQ จากแท็บข้าง/แถบงาน: คำนวณให้ทันที (เดิมแสดงแค่ข้อความ placeholder)
+        if (id === 'panel-calc' && typeof window.openBOQReport === 'function') window.openBOQReport();
     }
     updateTaskbar();
     if (typeof window.updateViewportRegion === 'function') window.updateViewportRegion();
@@ -748,8 +751,7 @@ scene.add(transformControl);
     // Numpad codes, so they can't collide with the existing plain-letter
     // shortcuts (T/E/R/Q) or typing in a focused input.
     window.addEventListener('keydown', (e) => {
-        const tag = document.activeElement && document.activeElement.tagName;
-        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+        if (isTypingTarget(document.activeElement)) return;
         const map = {
             Numpad1: e.ctrlKey ? '-Z' : '+Z',
             Numpad3: e.ctrlKey ? '-X' : '+X',
@@ -839,6 +841,7 @@ scene.add(transformControl);
     }
 })();
 
+let _loadingProject = false; // ระหว่างโหลดไฟล์: ไม่ select/refresh ทีละผนัง
 // --- PARAMETRIC BUILDING SYSTEM (additive; see docs/ARCHITECTURE.md) ---
 // Coexists with the legacy free-form box editor below. Toggled on via
 // the "วาดผนัง" button; does not touch `objects`/legacy undo-redo.
@@ -851,10 +854,26 @@ const parametric = bootstrapParametricBuilding({
     onWallMeshCreated: (mesh, wall) => {
         mesh.userData.name = wall.name || `ผนัง ${wall.id.slice(-4)}`;
         mesh.userData.material = wall.materialId;
+        mesh.userData.locked = !!wall.locked;
         objects.push(mesh);
-        refreshObjectList();
-        selectObject(mesh);
+        if (!_loadingProject) {
+            refreshObjectList();
+            selectObject(mesh);
+        }
     },
+});
+
+// คำสั่งผนัง/ช่องเจาะ/ชั้น ถูกบันทึกลงลำดับ undo เดียวกับการแก้ชิ้นงาน
+parametric.commandManager.onRecord = () => { logHistory('p'); redoStack = []; };
+// ผนังถูกลบ/ยกเลิกการสร้างผ่านโมเดล → เอา mesh ออกจาก objects และจากกลุ่มที่อยู่ด้วย
+parametric.buildingModel.events.on(Events.WALL_DELETED, ({ wallId }) => {
+    let found = null;
+    objects.forEach(r => r.traverse(o => { if (o.userData?.parametricWallId === wallId) found = o; }));
+    if (!found) return;
+    found.parent?.remove(found);
+    objects = objects.filter(o => o !== found);
+    multiSelected.delete(found);
+    if (selectedObject === found) selectObject(null);
 });
 
 // --- PARAMETRIC FLOOR SWITCHER (additive UI, spec §15) ---
@@ -909,6 +928,7 @@ function applyFloorLayerVisibility() {
     document.getElementById(`chk-layer-${key}`)?.addEventListener('change', (e) => {
         const floor = parametric.floorManager.getActiveFloor();
         if (!floor) return;
+        pushUndo();
         floor.layerVisibility[key] = e.target.checked;
         applyFloorLayerVisibility();
         parametric.buildingModel.events.emit(Events.FLOOR_LAYER_VISIBILITY_CHANGED, { floorId: floor.id, layerVisibility: floor.layerVisibility });
@@ -918,15 +938,51 @@ parametric.buildingModel.events.on(Events.ACTIVE_FLOOR_CHANGED, applyFloorLayerV
 // เรียกจริงหลัง landPlotOverlay ถูกสร้าง (ดู syncLandPlotOverlayToActiveFloor ด้านล่าง) กัน ReferenceError
 
 document.getElementById('btn-add-floor')?.addEventListener('click', () => {
-    const floorCount = parametric.floorManager.listFloors().length;
+    const nextLevel = Math.max(0, ...parametric.floorManager.listFloors().map(f => f.level)) + 1;
     const input = window.prompt(t('floors.promptHeight'), '3.0');
     if (input === null) return; // ผู้ใช้กดยกเลิก
     const height = parseFloat(input);
     if (!(height > 0)) { alert(t('floors.alertInvalidHeight')); return; }
-    const floor = parametric.floorManager.addFloor({ name: `ชั้น ${floorCount + 1}`, height });
-    parametric.floorManager.setActiveFloor(floor.id);
+    const fm = parametric.floorManager;
+    const prevActive = fm.activeFloorId;
+    const floor = fm.addFloor({ name: `ชั้น ${nextLevel}`, height });
+    fm.setActiveFloor(floor.id);
+    parametric.commandManager.record(new FnCommand(
+        () => { fm.setActiveFloor(prevActive); fm.removeFloor(floor.id); },
+        () => { parametric.buildingModel.floors.set(floor.id, floor); fm.setActiveFloor(floor.id); },
+    ));
     refreshFloorSwitcher();
     updateStatusBar();
+});
+
+document.getElementById('btn-delete-floor')?.addEventListener('click', () => {
+    const fm = parametric.floorManager;
+    if (fm.listFloors().length <= 1) { alert(t('floors.alertLast')); return; }
+    const floor = fm.getActiveFloor();
+    if (!floor) return;
+    const walls = [...parametric.buildingModel.walls.values()].filter(w => w.floorId === floor.id);
+    if (!confirm(t('floors.confirmDelete', { name: tData(floor.name), n: walls.length }))) return;
+    deactivateAllParametricTools();
+    deactivateExtrudePickMode();
+    historyTx(() => {
+        pushUndo(); // เก็บ transform/กลุ่มของผนัง เพื่อคืนค่าตอน undo
+        walls.forEach(w => {
+            const mesh = parametric.renderer.meshesByWallId.get(w.id);
+            if (mesh) { mesh.parent?.remove(mesh); objects = objects.filter(o => o !== mesh); multiSelected.delete(mesh); }
+            parametric.deleteWallUndoable(w.id);
+        });
+        if (selectedObject && !selectedObject.parent) selectObject(null);
+        const prevActive = fm.activeFloorId;
+        fm.removeFloor(floor.id);
+        parametric.commandManager.record(new FnCommand(
+            () => { parametric.buildingModel.floors.set(floor.id, floor); fm.setActiveFloor(prevActive); },
+            () => { fm.removeFloor(floor.id); },
+        ));
+    });
+    refreshFloorSwitcher();
+    refreshObjectList();
+    updateStatusBar();
+    updateRealtimeCalc();
 });
 
 // --- GRID FOLLOWS ACTIVE FLOOR (spec §15) ---
@@ -948,7 +1004,10 @@ let landPlotGrid = null;
 let landPlotEditing = false;
 
 const landPlotTransformControl = new TransformControls(camera, renderer.domElement);
-landPlotTransformControl.addEventListener('dragging-changed', (e) => { orbit.enabled = !e.value; });
+landPlotTransformControl.addEventListener('dragging-changed', (e) => {
+    orbit.enabled = !e.value;
+    if (e.value) pushUndo(); else dropUndoIfUnchanged();
+});
 landPlotTransformControl.addEventListener('objectChange', () => {
     landPlotOverlay.lockScaleY();
     persistLandPlotImage();
@@ -1054,6 +1113,7 @@ document.getElementById('inp-land-plot-image')?.addEventListener('change', async
     e.target.value = '';
     if (!file) return;
     try {
+        pushUndo();
         await landPlotOverlay.loadFromFile(file);
         landPlotOverlay.setElevation(parametric.floorManager.getActiveFloor()?.elevation ?? 0);
         persistLandPlotImage();
@@ -1065,6 +1125,7 @@ document.getElementById('inp-land-plot-image')?.addEventListener('change', async
 });
 
 document.getElementById('setting-landplot-visible')?.addEventListener('change', (e) => {
+    pushUndo();
     landPlotOverlay.setVisible(e.target.checked);
     persistLandPlotImage();
     rebuildLandPlotGrid();
@@ -1074,6 +1135,7 @@ document.getElementById('setting-landplot-grid')?.addEventListener('change', reb
 
 function applyLandPlotSizeInputs() {
     if (!landPlotOverlay.dataUrl) return;
+    pushUndo();
     const w = parseFloat(document.getElementById('inp-landplot-width')?.value);
     const d = parseFloat(document.getElementById('inp-landplot-depth')?.value);
     if (w > 0) landPlotOverlay.group.scale.x = w;
@@ -1085,10 +1147,13 @@ function applyLandPlotSizeInputs() {
 document.getElementById('inp-landplot-width')?.addEventListener('change', applyLandPlotSizeInputs);
 document.getElementById('inp-landplot-depth')?.addEventListener('change', applyLandPlotSizeInputs);
 
+let _opacityEditOpen = false;
 document.getElementById('inp-landplot-opacity')?.addEventListener('input', (e) => {
+    if (!_opacityEditOpen) { pushUndo(); _opacityEditOpen = true; }
     landPlotOverlay.setOpacity(parseFloat(e.target.value));
     persistLandPlotImage();
 });
+document.getElementById('inp-landplot-opacity')?.addEventListener('change', () => { _opacityEditOpen = false; });
 
 document.getElementById('btn-landplot-edit')?.addEventListener('click', () => setLandPlotEditing(!landPlotEditing));
 
@@ -1103,6 +1168,7 @@ document.querySelectorAll('#landplot-edit-modes [data-landplot-mode]').forEach(b
 
 document.getElementById('btn-landplot-remove')?.addEventListener('click', () => {
     if (!confirm(t('landplot.confirmRemove'))) return;
+    pushUndo();
     setLandPlotEditing(false);
     const floor = parametric.floorManager.getActiveFloor();
     if (floor) floor.landPlotImage = null;
@@ -1185,11 +1251,15 @@ function deactivateExtrudePickMode() {
     document.getElementById('btn-extrude-pick-mode')?.classList.remove('active');
 }
 
+let pendingCutSnap = null; // snapshot ก่อนลากเส้นตัด — บันทึกเข้า undo เมื่อเส้นถูกเพิ่มจริงเท่านั้น
 const cutTool = new CutTool({
     scene, camera, domElement: renderer.domElement,
     getActiveFloor: () => parametric.floorManager.getActiveFloor(),
     getCutGraph: () => cutGraph,
-    onCutAdded: () => { persistCutGraph(); renderCutGraph(); },
+    onCutAdded: () => {
+        if (pendingCutSnap) { pushUndoSnapshot(pendingCutSnap); pendingCutSnap = null; }
+        persistCutGraph(); renderCutGraph();
+    },
 });
 
 // สลับกราฟตัดให้ตรงกับชั้นที่ active — ชั้นใหม่ที่ยังไม่เคยตัดจะได้ขอบเขตสี่เหลี่ยมเปล่าอัตโนมัติ
@@ -1242,6 +1312,7 @@ document.getElementById('btn-cut-tool')?.addEventListener('click', (e) => {
 
 window.addEventListener('mousedown', (e) => {
     if (!cutToolActive || isUiTarget(e) || e.button !== 0) return;
+    pendingCutSnap = snapshotCurrent();
     cutTool.onPointerDown(e.clientX, e.clientY);
 });
 window.addEventListener('mousemove', (e) => {
@@ -1251,9 +1322,11 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mouseup', (e) => {
     if (!cutToolActive || isUiTarget(e) || e.button !== 0 || !cutTool.startPoint) return;
     cutTool.onPointerUp(e.clientX, e.clientY);
+    pendingCutSnap = null;
 });
 
 document.getElementById('btn-cut-undo')?.addEventListener('click', () => {
+    if (!cutGraph.isEmpty()) pushUndo();
     cutGraph.removeLastCut();
     persistCutGraph();
     renderCutGraph();
@@ -1261,6 +1334,7 @@ document.getElementById('btn-cut-undo')?.addEventListener('click', () => {
 
 document.getElementById('btn-cut-reset')?.addEventListener('click', () => {
     if (!confirm(t('cut.confirmReset'))) return;
+    pushUndo();
     const b = getFloorBoundsForCut();
     cutGraph.setBoundaryRect(b.minX, b.minZ, b.maxX, b.maxZ);
     extrudedFaceIds = new Set(); // ล้างเส้นแล้ว ช่องเก่าไม่มีอยู่จริงอีกต่อไป เริ่มนับใหม่
@@ -1533,6 +1607,8 @@ function applyMaterialTo(obj, matId) {
     if (!MATERIALS[matId]) return;
     const recolor = (mesh) => {
         mesh.userData.material = matId;
+        // ผนังพาราเมตริก: วัสดุต้องเขียนกลับเข้าโมเดลด้วย ไม่งั้น save/load (ที่สร้างผนังใหม่จากโมเดล) จะกลับเป็นวัสดุเดิม
+        // ตั้ง userData ก่อน → updateWallMesh จะเห็นว่า id ตรงกันและไม่สร้าง material ซ้ำทับของใหม่ด้านล่าง
         if (mesh.material) {
             const oldMaterial = mesh.material;
             mesh.material = buildStandardMaterial(matId, {
@@ -1542,6 +1618,8 @@ function applyMaterialTo(obj, matId) {
             });
             oldMaterial.dispose();
         }
+        const wid = mesh.userData.parametricWallId;
+        if (wid && typeof parametric !== 'undefined') parametric.wallManager.setWallProperty(wid, 'materialId', matId);
     };
     if (obj.isGroup) obj.traverse(o => { if (o.isMesh) recolor(o); });
     else if (obj.isMesh) recolor(obj);
@@ -1871,6 +1949,16 @@ function updateOpeningInputsFromSelection(openingId) {
     if (elSill) elSill.value = o.sillHeight.toFixed(2);
 }
 
+// ตั้งค่าช่องเจาะตรงๆ (ใช้ตอน undo/redo — ไม่ตรวจซ้อนทับซ้ำ เพราะค่าเดิมเคยผ่านการตรวจแล้ว)
+function setOpeningRaw(id, vals) {
+    const o = parametric.buildingModel.getOpening(id);
+    if (!o) return;
+    Object.assign(o, vals);
+    const wall = parametric.buildingModel.getWall(o.wallId);
+    parametric.buildingModel.events.emit(Events.OPENING_CHANGED, { opening: o, wall });
+    if (wall) parametric.buildingModel.events.emit(Events.WALL_CHANGED, { wall });
+}
+
 function applyOpeningInputs() {
     if (!selectedOpeningId) return;
     const elOffset = document.getElementById('inp-open-offset');
@@ -1883,6 +1971,8 @@ function applyOpeningInputs() {
         height: parseFloat(elH?.value),
         sillHeight: parseFloat(elSill?.value),
     };
+    const prevOpening = parametric.buildingModel.getOpening(selectedOpeningId);
+    const openingBefore = prevOpening ? { offset: prevOpening.offset, width: prevOpening.width, height: prevOpening.height, sillHeight: prevOpening.sillHeight } : null;
     const updated = parametric.openingManager.updateOpening(selectedOpeningId, patch);
     if (!updated) {
         alert(t('alert.openingOverlap'));
@@ -1891,6 +1981,16 @@ function applyOpeningInputs() {
         return;
     }
     updateOpeningInputsFromSelection(selectedOpeningId);
+    if (openingBefore) {
+        const oid = selectedOpeningId;
+        const openingAfter = { offset: updated.offset, width: updated.width, height: updated.height, sillHeight: updated.sillHeight };
+        if (JSON.stringify(openingBefore) !== JSON.stringify(openingAfter)) {
+            parametric.commandManager.record(new FnCommand(
+                () => setOpeningRaw(oid, openingBefore),
+                () => setOpeningRaw(oid, openingAfter),
+            ));
+        }
+    }
     // เมชถูกสร้างใหม่ (_createOrUpdateMesh ลบของเก่าแล้วเติมใหม่เสมอ) ต้องผูก outline/selection เข้ากับเมชล่าสุด
     const freshMesh = parametric.openingRenderer.meshesByOpeningId.get(selectedOpeningId);
     selectedObject = freshMesh || null;
@@ -1974,6 +2074,7 @@ function moveObjectToEdge(obj, toFront) {
 }
 
 function toggleVisible(obj) {
+    pushUndo();
     obj.visible = !obj.visible;
     if (obj.userData.parametricWallId) parametric.wallManager.setWallVisible(obj.userData.parametricWallId, obj.visible);
     if (selectedObject === obj) updateDimensionLabels();
@@ -1982,6 +2083,7 @@ function toggleVisible(obj) {
 }
 
 function toggleLock(obj) {
+    pushUndo();
     obj.userData.locked = !obj.userData.locked;
     if (obj.userData.parametricWallId) parametric.wallManager.setWallLocked(obj.userData.parametricWallId, obj.userData.locked);
     if (obj.userData.locked && selectedObject === obj) selectObject(null);
@@ -2024,11 +2126,20 @@ function moveObjectToRoot(child) {
     updateRealtimeCalc();
 }
 
-function deleteObjectNode(obj) {
+// ลบผนังพาราเมตริกทุกเส้นที่อยู่ในชิ้นงาน/กลุ่มนี้ออกจากโมเดล (undo ได้) ก่อน dispose mesh
+function deleteWallsInside(obj) {
+    const ids = [];
+    obj.traverse(o => { if (o.userData?.parametricWallId) ids.push(o.userData.parametricWallId); });
+    ids.forEach(id => parametric.deleteWallUndoable(id));
+}
+
+function deleteObjectNode(obj) { historyTx(() => _deleteObjectNode(obj)); }
+function _deleteObjectNode(obj) {
     if (obj.userData.parametricWallId) {
         // Wall data/geometry lifecycle is owned by WallManager/WallRenderer
         // (undo/redo-aware) — just drop our outliner reference, don't
         // touch the mesh/geometry directly or undo would desync.
+        pushUndo(); // เก็บ transform/กลุ่มของผนัง เพื่อคืนค่าตอน undo
         parametric.deleteWallUndoable(obj.userData.parametricWallId);
         objects = objects.filter(o => o !== obj);
         multiSelected.delete(obj);
@@ -2038,6 +2149,7 @@ function deleteObjectNode(obj) {
         return;
     }
     pushUndo();
+    deleteWallsInside(obj);
     const parent = obj.parent;
     if (parent) parent.remove(obj);
     else scene.remove(obj);
@@ -2061,7 +2173,9 @@ function duplicateObjectNode(obj) {
     const data = serializeObject(obj);
     data.position = [data.position[0] + 0.8, data.position[1], data.position[2] + 0.8];
     data.name = data.name + ' Copy';
+    _wallPool = null;
     const newObj = buildFromData(data);
+    if (!newObj) return;
     const parent = obj.parent;
     if (parent && parent.isGroup) {
         parent.add(newObj);
@@ -2296,9 +2410,11 @@ function disposeObject(obj) {
     });
 }
 
-function clearAllObjects() {
+function clearAllObjects() { historyTx(_clearAllObjects); }
+function _clearAllObjects() {
     pushUndo();
     selectObject(null);
+    [...objects].forEach(deleteWallsInside);
     objects.forEach(obj => {
         scene.remove(obj);
         disposeObject(obj);
@@ -2377,6 +2493,7 @@ function deactivateAllParametricTools() {
     parametric.wallTool.deactivate();
     parametric.openingTool.deactivate();
     if (typeof deactivateCutTool === 'function') deactivateCutTool(); // กันชนกับเครื่องมือตัดเส้นแบ่งช่อง (ข้อ 4)
+    if (typeof deactivateExtrudePickMode === 'function') deactivateExtrudePickMode(); // กันชนกับโหมดเลือกช่อง Extrude
     orbit.enabled = true;
     orbit.mouseButtons.LEFT = THREE.MOUSE.ROTATE; // restore default (left = orbit) outside wall tool
     document.getElementById('btn-parametric-wall-tool')?.classList.remove('active');
@@ -2475,7 +2592,14 @@ document.getElementById('btn-parametric-window-tool')?.addEventListener('click',
         parametric.updateOpeningSettings(readInputs(), { applyToExisting: false });
     }));
     $('btn-opening-apply')?.addEventListener('click', () => {
+        const snapAll = () => [...parametric.buildingModel.openings.values()].map(o => ({ id: o.id, offset: o.offset, width: o.width, height: o.height, sillHeight: o.sillHeight }));
+        const before = snapAll();
         parametric.updateOpeningSettings(readInputs(), { applyToExisting: true });
+        const after = snapAll();
+        if (JSON.stringify(before) !== JSON.stringify(after)) {
+            const apply = (list) => list.forEach(v => setOpeningRaw(v.id, { offset: v.offset, width: v.width, height: v.height, sillHeight: v.sillHeight }));
+            parametric.commandManager.record(new FnCommand(() => apply(before), () => apply(after)));
+        }
         fillInputs();
         updateRealtimeCalc();
     });
@@ -2698,8 +2822,16 @@ document.addEventListener('click', (e) => {
 });
 
 window.performCalcAll = function () {
-    const visible = objects.filter(o => o.visible);
     const el = document.getElementById('calc-result-content');
+    // มีชิ้นงานที่ติ๊ก ☑ ไว้ = คิดเฉพาะที่เลือก; ไม่ได้ติ๊กอะไรเลย = คิดรวมทั้งหมด
+    if (multiSelected.size > 0) {
+        const picked = Array.from(multiSelected);
+        const topCount = picked.reduce((n, o) => n + (o.isGroup ? o.children.length : 1), 0);
+        lastBOQRefresh = () => window.performCalcAll();
+        if (el) el.innerHTML = buildBOQReport(picked, t('boq.title.ticked', { n: picked.length }), topCount);
+        return;
+    }
+    const visible = objects.filter(o => o.visible);
     const legacyHtml = buildBOQReport(visible, t('boq.title.project'), visible.length);
     const parametricReport = parametric.calculateBOQ();
     const parametricHtml = renderParametricBOQReport(parametricReport);
@@ -2708,6 +2840,12 @@ window.performCalcAll = function () {
         ? buildBOQSettingsBox(parametricReport.sections.map(s => s.materialId)) : '';
     if (el) el.innerHTML = settingsHtml + legacyHtml + parametricHtml;
     lastBOQRefresh = () => window.performCalcAll();
+};
+
+// ปุ่ม BOQ: มีชิ้นงานที่ติ๊ก = คิดที่ติ๊ก, เลือกชิ้นงานอยู่ = คิดชิ้นนั้น, ไม่ได้เลือกอะไร = คิดรวมทั้งหมด
+window.openBOQReport = function () {
+    if (multiSelected.size === 0 && selectedObject) window.calcSelectedObject();
+    else window.performCalcAll();
 };
 
 window.calcSelectedObject = function () {
@@ -2774,7 +2912,15 @@ function applyPosFromInputs() {
     }
 }
 
-[inpPosX, inpPosY, inpPosZ].forEach(inp => inp?.addEventListener('input', () => { applyPosFromInputs(); syncOpeningsToWallMeshes(); }));
+let _posEditOpen = false;
+[inpPosX, inpPosY, inpPosZ].forEach(inp => {
+    inp?.addEventListener('input', () => {
+        if (selectedObject && !_posEditOpen) { pushUndo(); _posEditOpen = true; }
+        applyPosFromInputs(); syncOpeningsToWallMeshes();
+    });
+    inp?.addEventListener('change', () => { _posEditOpen = false; });
+    inp?.addEventListener('blur', () => { _posEditOpen = false; });
+});
 
 // --- 11. UNDO / REDO / COPY / PASTE SYSTEM ---
 let undoStack = [];
@@ -2782,11 +2928,65 @@ let redoStack = [];
 const UNDO_LIMIT = 40;
 let clipboardData = null;
 
+// ข้อมูลต่อชั้นที่ไม่ได้อยู่ในชิ้นงาน: เส้นตัด/ช่องที่ extrude แล้ว/ภาพผังที่ดิน/การมองเห็นเลเยอร์
+// เก็บรวมใน snapshot เดียวกัน ทำให้ทุกจุดที่เรียก pushUndo() ครอบคลุมข้อมูลเหล่านี้ด้วย
+const _imgIds = new Map(), _imgById = new Map();
+function imgToRef(u) {
+    if (!u) return u;
+    let id = _imgIds.get(u);
+    if (!id) { id = 'img' + (_imgIds.size + 1); _imgIds.set(u, id); _imgById.set(id, u); } // ภาพใหญ่เก็บครั้งเดียว ไม่ซ้ำทุก snapshot
+    return id;
+}
+function refToImg(r) { return _imgById.get(r) || r; }
+
+function captureFloorExtras() {
+    return parametric.floorManager.listFloors().map(f => ({
+        id: f.id,
+        cut: f.cutGraph || null,
+        extruded: [...(f.extrudedFaceIds || [])],
+        land: f.landPlotImage ? { ...f.landPlotImage, dataUrl: imgToRef(f.landPlotImage.dataUrl) } : null,
+        layers: f.layerVisibility ? { ...f.layerVisibility } : null,
+    }));
+}
+
+function restoreFloorExtras(list) {
+    list.forEach(sx => {
+        const f = parametric.buildingModel.floors.get(sx.id);
+        if (!f) return;
+        f.cutGraph = sx.cut;
+        f.extrudedFaceIds = sx.extruded;
+        f.landPlotImage = sx.land ? { ...sx.land, dataUrl: refToImg(sx.land.dataUrl) } : null;
+        if (sx.layers && f.layerVisibility) Object.assign(f.layerVisibility, sx.layers);
+    });
+    syncLandPlotOverlayToActiveFloor();
+    syncCutGraphToActiveFloor();
+    applyFloorLayerVisibility();
+    const panel = document.getElementById('floor-layer-panel');
+    if (panel && panel.style.display === 'block') showFloorLayerPanel();
+}
+
 function snapshotCurrent() {
-    return JSON.stringify(objects.map(o => serializeObject(o)));
+    try { persistCutGraph(); } catch (e) { /* ยังไม่พร้อมตอนเริ่มระบบ */ }
+    return JSON.stringify({ v: 2, objects: objects.map(o => serializeObject(o)), floors: captureFloorExtras() });
 }
 
 function serializeObject(obj) {
+    // ผนังพาราเมตริก: ข้อมูลจริง (node/ความหนา/วัสดุ/ช่องเจาะ) อยู่ใน BuildingModel อยู่แล้ว
+    // เก็บเฉพาะ "อ้างอิงผนัง + transform ที่ผู้ใช้ย้าย/หมุน/สเกลที่ตัว mesh" (local ใน parent เดิม)
+    // เดิมถูกเซฟเป็นกล่องจาก geometry.parameters → ผนังที่มีช่องเจาะ (ExtrudeGeometry) ได้ขนาด NaN
+    if (obj.userData.parametricWallId) {
+        return {
+            type: 'wallRef',
+            wallId: obj.userData.parametricWallId,
+            name: obj.userData.name,
+            material: obj.userData.material,
+            visible: obj.visible,
+            locked: !!obj.userData.locked,
+            position: obj.position.toArray(),
+            rotation: [obj.rotation.x, obj.rotation.y, obj.rotation.z],
+            scale: obj.scale.toArray()
+        };
+    }
     if (obj.isGroup) {
         return {
             type: 'group',
@@ -2797,7 +2997,7 @@ function serializeObject(obj) {
             position: obj.position.toArray(),
             rotation: [obj.rotation.x, obj.rotation.y, obj.rotation.z],
             scale: obj.scale.toArray(),
-            children: obj.children.map(c => serializeObject(c))
+            children: obj.children.filter(c => c.userData.parametricWallId || c.isMesh || c.isGroup).map(c => serializeObject(c))
         };
     }
     // ชิ้นงานที่ Extrude มาจากเส้นตัด (geometry เป็น ExtrudeGeometry ไม่ใช่ BoxGeometry
@@ -2841,7 +3041,34 @@ function serializeObject(obj) {
     };
 }
 
+// ผนังพาราเมตริกที่ถูกสร้างไว้แล้ว (wallId → mesh) — ใช้ตอน load/undo เพื่อ "นำ mesh เดิมกลับมาวาง" แทนการสร้างกล่องใหม่
+let _wallPool = null;
+function collectWallMeshes() {
+    const pool = new Map();
+    objects.forEach(root => root.traverse(o => { if (o.userData?.parametricWallId) pool.set(o.userData.parametricWallId, o); }));
+    pool.forEach(m => m.parent?.remove(m)); // ถอดออกก่อน dispose กลุ่ม/ฉาก จะได้ไม่ถูกทำลายไปด้วย
+    return pool;
+}
 function buildFromData(data) {
+    if (data.type === 'wallRef') {
+        const m = _wallPool?.get(data.wallId);
+        if (!m) return null; // ผนังนี้ไม่มีในโมเดลแล้ว (หรือกำลัง copy/paste) — ข้าม
+        _wallPool.delete(data.wallId);
+        // ซิงก์ค่าที่อยู่ในโมเดลผนังก่อน (ล็อก/วัสดุ) แล้วค่อยตั้ง visible/transform ทับ เพราะ WALL_CHANGED รีเซ็ต visible
+        const wm = parametric.buildingModel.getWall(data.wallId);
+        if (wm) {
+            if (!!wm.locked !== !!data.locked) parametric.wallManager.setWallLocked(data.wallId, !!data.locked);
+            if (data.material && wm.materialId !== data.material) parametric.wallManager.setWallProperty(data.wallId, 'materialId', data.material);
+        }
+        if (data.name) m.userData.name = data.name;
+        m.userData.locked = !!data.locked;
+        m.visible = data.visible !== false;
+        m.position.fromArray(data.position);
+        m.rotation.set(data.rotation[0], data.rotation[1], data.rotation[2]);
+        m.scale.fromArray(data.scale);
+        m.updateMatrix();
+        return m;
+    }
     if (data.type === 'group') {
         const g = new THREE.Group();
         g.userData.name = data.name;
@@ -2851,7 +3078,7 @@ function buildFromData(data) {
         g.position.fromArray(data.position);
         g.rotation.set(data.rotation[0], data.rotation[1], data.rotation[2]);
         g.scale.fromArray(data.scale);
-        data.children.forEach(cd => g.add(buildFromData(cd)));
+        data.children.forEach(cd => { const c = buildFromData(cd); if (c) g.add(c); });
         return g;
     }
     if (data.type === 'extrude') {
@@ -2876,38 +3103,112 @@ function buildFromData(data) {
     return mesh;
 }
 
-function pushUndo() {
-    undoStack.push(snapshotCurrent());
+// --- UNIFIED HISTORY ---
+// ระบบมี 2 ที่เก็บ: (m) snapshot ของชิ้นงาน+ข้อมูลชั้น และ (p) คำสั่งของโมเดลผนัง/ช่องเจาะ/ชั้น
+// historyLog เรียงเหตุการณ์ตามเวลาจริง เพื่อให้ Ctrl+Z/Ctrl+Y ย้อนกลับทีละการกระทำไม่ว่าจะมาจากระบบไหน
+// 1 การกระทำที่แตะทั้งสองระบบ (เช่น ลบผนัง) ถูกรวมเป็น 1 รายการด้วย historyTx
+let historyLog = [];
+let futureLog = [];
+let histTx = null;
+
+function logHistory(kind) {
+    if (histTx) { histTx[kind]++; return; }
+    historyLog.push({ m: kind === 'm' ? 1 : 0, p: kind === 'p' ? 1 : 0 });
+    if (historyLog.length > 300) historyLog.shift();
+    futureLog.length = 0;
+}
+
+function historyTx(fn) {
+    if (histTx) return fn();
+    histTx = { m: 0, p: 0 };
+    try { return fn(); }
+    finally {
+        const tx = histTx;
+        histTx = null;
+        if (tx.m || tx.p) { historyLog.push(tx); futureLog.length = 0; }
+    }
+}
+
+function pushUndoSnapshot(json) {
+    undoStack.push(json);
     if (undoStack.length > UNDO_LIMIT) undoStack.shift();
     redoStack = []; // การกระทำใหม่ล้างประวัติ redo
+    if (typeof parametric !== 'undefined') parametric.commandManager.redoStack.length = 0;
+    logHistory('m');
+}
+
+function pushUndo() { pushUndoSnapshot(snapshotCurrent()); }
+
+// ลาก/พิมพ์แล้วค่าไม่เปลี่ยนจริง → ไม่ต้องเก็บเป็นขั้น undo
+function dropUndoIfUnchanged() {
+    const last = undoStack[undoStack.length - 1];
+    const e = historyLog[historyLog.length - 1];
+    if (last && e && e.m === 1 && e.p === 0 && last === snapshotCurrent()) { undoStack.pop(); historyLog.pop(); }
 }
 
 function restoreSnapshot(snapshotJSON) {
+    _wallPool = collectWallMeshes();
     objects.forEach(o => { scene.remove(o); disposeObject(o); });
     objects = [];
-    const data = JSON.parse(snapshotJSON);
-    data.forEach(d => {
+    const parsed = JSON.parse(snapshotJSON);
+    const list = Array.isArray(parsed) ? parsed : parsed.objects;
+    list.forEach(d => {
         const obj = buildFromData(d);
+        if (!obj) return;
         scene.add(obj);
         objects.push(obj);
     });
+    // ผนังที่ยังอยู่ในโมเดลแต่ไม่อยู่ใน snapshot (สร้างทีหลัง) ต้องคงอยู่ในฉากให้ตรงกับโมเดล
+    _wallPool.forEach(m => { scene.add(m); objects.push(m); });
+    _wallPool = null;
+    if (parsed.floors) restoreFloorExtras(parsed.floors);
+    syncOpeningsToWallMeshes();
     selectObject(null);
     refreshObjectList();
     updateRealtimeCalc();
 }
 
-function undo() {
-    if (undoStack.length === 0) return;
+function restoreUndo() {
     redoStack.push(snapshotCurrent());
-    const prev = undoStack.pop();
-    restoreSnapshot(prev);
+    restoreSnapshot(undoStack.pop());
+}
+function restoreRedo() {
+    undoStack.push(snapshotCurrent());
+    restoreSnapshot(redoStack.pop());
+}
+
+function afterParamHistory() {
+    selectObject(null);
+    refreshFloorSwitcher();
+    refreshObjectList();
+    syncOpeningsToWallMeshes();
+    updateStatusBar();
+    updateRealtimeCalc();
+}
+
+function undo() {
+    while (historyLog.length) {
+        const e = historyLog.pop();
+        let did = false;
+        for (let i = 0; i < e.p; i++) if (parametric.canUndo()) { parametric.undo(); did = true; }
+        if (did) afterParamHistory();
+        if (e.m && undoStack.length) { restoreUndo(); did = true; }
+        if (did) { futureLog.push(e); return true; }
+    }
+    return false;
 }
 
 function redo() {
-    if (redoStack.length === 0) return;
-    undoStack.push(snapshotCurrent());
-    const next = redoStack.pop();
-    restoreSnapshot(next);
+    while (futureLog.length) {
+        const e = futureLog.pop();
+        let did = false;
+        if (e.m && redoStack.length) { restoreRedo(); did = true; }
+        let pdid = false;
+        for (let i = 0; i < e.p; i++) if (parametric.canRedo()) { parametric.redo(); pdid = true; }
+        if (pdid) { afterParamHistory(); did = true; }
+        if (did) { historyLog.push(e); return true; }
+    }
+    return false;
 }
 
 function copySelected() {
@@ -2921,7 +3222,9 @@ function pasteClipboard() {
     const data = JSON.parse(JSON.stringify(clipboardData));
     data.position = [data.position[0] + 0.8, data.position[1], data.position[2] + 0.8];
     data.name = data.name + ' Copy';
+    _wallPool = null;
     const obj = buildFromData(data);
+    if (!obj) return;
     scene.add(obj);
     objects.push(obj);
     refreshObjectList();
@@ -3125,41 +3428,64 @@ window.addEventListener('dblclick', (e) => {
     }
 });
 
+// พิมพ์ข้อความอยู่จริงเท่านั้นถึงจะปิดคีย์ลัด (checkbox/range/button ที่เพิ่งคลิกต้องไม่บล็อกคีย์ลัด)
+function isTypingTarget(el) {
+    if (!el) return false;
+    const tag = el.tagName;
+    if (tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) return true;
+    if (tag === 'INPUT') return !['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'file', 'color'].includes(el.type);
+    return false;
+}
+// ตัวอักษรจากตำแหน่งปุ่มจริง (e.code) — ใช้ได้แม้เปิดคีย์บอร์ดภาษาไทย/ภาษาอื่น
+function shortcutKey(e) {
+    return /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : (e.key || '').toLowerCase();
+}
+// คลิกที่ฉาก 3 มิติ = เอาโฟกัสออกจากช่องกรอก/ปุ่มที่ค้างอยู่ เพื่อให้คีย์ลัดทำงาน
+renderer.domElement.addEventListener('pointerdown', () => {
+    const a = document.activeElement;
+    if (a && a !== document.body && typeof a.blur === 'function') a.blur();
+});
+
 window.addEventListener('keydown', (e) => {
-    const tag = document.activeElement && document.activeElement.tagName;
-    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    if (isTypingTarget(document.activeElement)) return;
+
+    if (e.key === 'Escape') {
+        deactivateAllParametricTools(); // วาดผนัง/ประตู/หน้าต่าง/ตัดช่อง
+        deactivateExtrudePickMode();
+        return;
+    }
 
     if (e.ctrlKey || e.metaKey) {
-        const key = e.key.toLowerCase();
+        const key = shortcutKey(e);
         if (key === 'z' && e.shiftKey) {
             e.preventDefault();
-            if (parametricToolActive || parametricOpeningToolActive) { parametric.redo(); updateRealtimeCalc(); }
-            else redo();
+            redo();
             return;
         }
         if (key === 'z') {
             e.preventDefault();
-            if (parametricToolActive || parametricOpeningToolActive) { parametric.undo(); updateRealtimeCalc(); }
-            else undo();
+            undo();
             return;
         }
         if (key === 'y') {
             e.preventDefault();
-            if (parametricToolActive || parametricOpeningToolActive) { parametric.redo(); updateRealtimeCalc(); }
-            else redo();
+            redo();
             return;
         }
         if (key === 'c') { e.preventDefault(); copySelected(); return; }
         if (key === 'v') { e.preventDefault(); pasteClipboard(); return; }
     }
 
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedObject) deleteObjectNode(selectedObject);
+        return;
     }
-    if (e.key.toLowerCase() === 't') setTool('translate');
-    if (e.key.toLowerCase() === 'r') setTool('scale');
-    if (e.key.toLowerCase() === 'e') setTool('rotate');
-    if (e.key.toLowerCase() === 'q') setTool('select');
+    const k = shortcutKey(e);
+    if (k === 't') setTool('translate');
+    else if (k === 'r') setTool('scale');
+    else if (k === 'e') setTool('rotate');
+    else if (k === 'q') setTool('select');
 });
 
 document.getElementById('btn-calc-all')?.addEventListener('click', () => {
@@ -3241,6 +3567,87 @@ document.getElementById('btn-reset-view')?.addEventListener('click', () => {
 });
 
 // --- 12. SAVE / LOAD PROJECT (.json) ---
+// ค่าตั้งค่าโปรแกรมที่ต้องไปกับไฟล์โปรเจกต์ (ธีม/ภาษา/ผนังตั้งต้น/ประตู-หน้าต่าง/วัสดุที่เลือก/กริด/กล้อง/เครื่องมือ)
+function collectProjectSettings() {
+    const num = (id) => parseFloat(document.getElementById(id)?.value);
+    return {
+        app: { showDragLength: appSettings.showDragLength, theme: currentTheme, language: getLanguage() },
+        wallDefaults: { ...parametric.getWallDefaults() },
+        openingSettings: parametric.getOpeningSettings(),
+        extrudeHeight: num('inp-extrude-height'),
+        selectedMaterial: selectedNewMaterial,
+        tool: currentTool,
+        grid: { width: num('inp-grid-width'), length: num('inp-grid-length'), divisions: num('inp-grid-divisions') },
+        camera: {
+            mode: window.getCameraMode ? window.getCameraMode() : '3d',
+            position: camera.position.toArray(), target: orbit.target.toArray(), up: camera.up.toArray(),
+            fov: camera.fov, far: camera.far,
+        },
+    };
+}
+
+function applyProjectSettings(st) {
+    if (!st || typeof st !== 'object') return;
+    const setVal = (id, v) => { const el = document.getElementById(id); if (el && v != null && Number.isFinite(Number(v))) el.value = v; };
+    const step = (fn) => { try { fn(); } catch (err) { console.warn('applyProjectSettings:', err); } };
+    step(() => {
+        if (!st.app) return;
+        if (typeof st.app.showDragLength === 'boolean') {
+            appSettings.showDragLength = st.app.showDragLength;
+            if (settingShowDragLengthEl) settingShowDragLengthEl.checked = st.app.showDragLength;
+            saveAppSettings();
+        }
+        if (st.app.theme && THEMES[st.app.theme]) applyTheme(st.app.theme);
+        if (st.app.language && st.app.language !== getLanguage()) {
+            document.querySelector(`#lang-switcher .lang-btn[data-lang="${st.app.language}"]`)?.click();
+        }
+    });
+    step(() => {
+        if (!st.wallDefaults) return;
+        const w = {};
+        ['height', 'thickness'].forEach(k => { if (st.wallDefaults[k] > 0) w[k] = st.wallDefaults[k]; });
+        if (st.wallDefaults.materialId) w.materialId = st.wallDefaults.materialId;
+        parametric.setWallDefaults(w);
+        const d = parametric.getWallDefaults();
+        setVal('inp-wall-height', d.height); setVal('inp-wall-thickness', d.thickness);
+    });
+    step(() => {
+        if (!st.openingSettings) return;
+        const o = parametric.updateOpeningSettings(st.openingSettings, { applyToExisting: false });
+        [['door', 'door'], ['window', 'window']].forEach(([type, p]) => {
+            setVal(`inp-${p}-w`, o[type].width); setVal(`inp-${p}-h`, o[type].height); setVal(`inp-${p}-sill`, o[type].sillHeight);
+        });
+        const ls = document.getElementById('chk-lock-sill'); if (ls) ls.checked = o.lockSill;
+        const lh = document.getElementById('chk-lock-head'); if (lh) lh.checked = o.lockHead;
+    });
+    step(() => setVal('inp-extrude-height', st.extrudeHeight));
+    step(() => { if (st.selectedMaterial && MATERIALS[st.selectedMaterial]) { selectedNewMaterial = st.selectedMaterial; refreshNewMaterialTabs(); } });
+    step(() => { if (['translate', 'rotate', 'scale', 'select'].includes(st.tool)) setTool(st.tool); });
+    step(() => {
+        if (!st.grid) return;
+        const { width: gw, length: gl, divisions: gd } = st.grid;
+        if (gw > 0 && gl > 0 && gd > 0) {
+            setVal('inp-grid-width', gw); setVal('inp-grid-length', gl); setVal('inp-grid-divisions', gd);
+            applyGridSize(gw, gl, gd);
+        }
+    });
+    step(() => {
+        const c = st.camera;
+        if (!c || !c.position || !c.target || !c.up) return;
+        if (typeof window.__clearAxisLock === 'function') window.__clearAxisLock();
+        const mode = c.mode === '2d' ? '2d' : '3d';
+        if (window.getCameraMode && window.getCameraMode() !== mode) window.setCameraMode(mode);
+        camera.up.fromArray(c.up);
+        camera.position.fromArray(c.position);
+        if (c.fov > 0) camera.fov = c.fov;
+        if (c.far > 0) camera.far = c.far;
+        camera.updateProjectionMatrix();
+        orbit.target.fromArray(c.target);
+        camera.lookAt(orbit.target);
+        rebuildOrbitControls();
+    });
+}
+
 document.getElementById('btn-save-project')?.addEventListener('click', () => {
     // Uses ProjectSerializer (src/persistence/) so the parametric
     // building model is saved alongside the legacy free-form objects
@@ -3249,12 +3656,12 @@ document.getElementById('btn-save-project')?.addEventListener('click', () => {
     // real data is the BuildingModel wall, already saved via
     // saveProjectData's own `building` key — skip re-serializing them here
     // or load would double them up.
-    const data = parametric.saveProjectData(
-        objects.filter(o => !o.userData.parametricWallId).map(o => serializeObject(o))
-    );
+    // ผนังถูกเซฟเป็น wallRef (อ้างอิง + transform) ทั้งระดับบนสุดและในกลุ่ม เพื่อคงตำแหน่ง/การหมุน/สเกล/การจัดกลุ่ม
+    const data = parametric.saveProjectData(objects.map(o => serializeObject(o)));
     // แนบวัสดุกำหนดเอง + texture ที่ตั้งค่าไว้ (ข้อ 6) ไปกับไฟล์โปรเจกต์ด้วย
     // เพื่อให้เปิดไฟล์นี้บนเครื่อง/เบราว์เซอร์อื่นแล้วยังเห็นวัสดุ/texture เดิมครบ
     data.materials = serializeMaterialRegistry();
+    data.settings = collectProjectSettings();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -3268,6 +3675,58 @@ document.getElementById('btn-load-project')?.addEventListener('click', () => {
     document.getElementById('file-load-project')?.click();
 });
 
+// สร้างข้อมูลโปรเจกต์ทั้งก้อน (ใช้เป็นจุดย้อนกลับของการเปิดไฟล์)
+function captureProjectForHistory() {
+    try { persistCutGraph(); } catch (e) { /* ignore */ }
+    const data = parametric.saveProjectData(objects.map(o => serializeObject(o)));
+    data.materials = serializeMaterialRegistry();
+    data.settings = collectProjectSettings();
+    return JSON.stringify(data);
+}
+
+// ใช้ทั้งตอนเปิดไฟล์ และตอน undo/redo การเปิดไฟล์ (fullSettings=false → คืนเฉพาะตารางกริด ไม่ขยับกล้อง/ธีม/ภาษา)
+function applyLoadedProject(data, fullSettings) {
+    // โหลดวัสดุกำหนดเอง/texture ของไฟล์นี้ก่อน (ถ้ามี) แล้วรีเฟรช registry + แท็บวัสดุ
+    // ให้ทันก่อนที่ buildFromData ด้านล่างจะสร้าง mesh ที่อาจอ้างอิงวัสดุกำหนดเองเหล่านั้น
+    if (data.materials) {
+        loadMaterialRegistry(data.materials);
+        refreshMaterialsRegistry();
+        refreshNewMaterialTabs();
+    }
+    // FIX (root cause of "wall/parametric object disappears after load"):
+    // ต้องล้างฉากเก่าก่อน แล้วค่อยโหลด เพื่อให้ผนังที่เพิ่งสร้างไม่ถูกลบทิ้งทีหลัง
+    selectObject(null);
+    objects.forEach(o => { scene.remove(o); disposeObject(o); });
+    objects = [];
+    _loadingProject = true;
+    let list;
+    try { list = parametric.loadProjectData(data); } finally { _loadingProject = false; }
+    // ผนังที่เพิ่งสร้างจากโมเดลอยู่ใน `objects` (ผ่าน onWallMeshCreated) → เก็บเป็น pool แล้วประกอบ scene ใหม่
+    // ตามลำดับ/กลุ่ม/transform ที่เซฟไว้ (wallRef) ผนังที่ไม่มีใน list (ไฟล์เก่า) จะอยู่ตำแหน่งตามโมเดล
+    _wallPool = collectWallMeshes();
+    objects = [];
+    try {
+        list.forEach(d => {
+            const obj = buildFromData(d);
+            if (!obj) return;
+            scene.add(obj);
+            objects.push(obj);
+        });
+        _wallPool.forEach(m => { scene.add(m); objects.push(m); });
+    } finally { _wallPool = null; }
+    scene.updateMatrixWorld(true);
+    syncOpeningsToWallMeshes(); // ช่องเจาะตาม transform ของผนังที่คืนค่ามา
+    selectObject(null);
+    refreshObjectList();
+    updateRealtimeCalc();
+    refreshFloorSwitcher();
+    syncLandPlotOverlayToActiveFloor();
+    syncCutGraphToActiveFloor();
+    applyProjectSettings(fullSettings ? data.settings : { grid: data.settings?.grid });
+    applyFloorLayerVisibility(); // กริดถูกสร้างใหม่ตามค่าที่คืนมา ต้องตั้งการมองเห็นตามชั้นอีกครั้ง
+    updateStatusBar();
+}
+
 document.getElementById('file-load-project')?.addEventListener('change', (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -3275,36 +3734,17 @@ document.getElementById('file-load-project')?.addEventListener('change', (e) => 
     reader.onload = () => {
         try {
             const data = JSON.parse(reader.result);
-            // โหลดวัสดุกำหนดเอง/texture ของไฟล์นี้ก่อน (ถ้ามี) แล้วรีเฟรช registry + แท็บวัสดุ
-            // ให้ทันก่อนที่ buildFromData ด้านล่างจะสร้าง mesh ที่อาจอ้างอิงวัสดุกำหนดเองเหล่านั้น
-            if (data.materials) {
-                loadMaterialRegistry(data.materials);
-                refreshMaterialsRegistry();
-                refreshNewMaterialTabs();
-            }
-            // FIX (root cause of "wall/parametric object disappears after load"):
-            // parametric.loadProjectData() -> renderer.renderAll() creates fresh wall
-            // meshes and (via onWallMeshCreated) pushes them into `objects` DURING this
-            // call. The old code cleared `objects` (scene.remove + dispose) AFTER calling
-            // loadProjectData, which nuked the just-created wall meshes it had pushed in,
-            // then rebuilt `objects` only from the legacy list — so every parametric wall
-            // vanished immediately after every Load. Must clear old scene state FIRST,
-            // then load, so the freshly rendered walls are never in the disposal sweep.
-            pushUndo();
-            objects.forEach(o => { scene.remove(o); disposeObject(o); });
-            objects = [];
-            const list = parametric.loadProjectData(data);
-            list.forEach(d => {
-                const obj = buildFromData(d);
-                scene.add(obj);
-                objects.push(obj);
-            });
-            selectObject(null);
-            refreshObjectList();
-            updateRealtimeCalc();
-            refreshFloorSwitcher();
-            syncLandPlotOverlayToActiveFloor();
-            syncCutGraphToActiveFloor();
+            const beforeStr = captureProjectForHistory();
+            applyLoadedProject(data, true);
+            // โหลดไฟล์แทนที่ทั้งโปรเจกต์: ประวัติเก่าอ้างอิงโปรเจกต์เดิม จึงเริ่มประวัติใหม่ แล้วบันทึกการเปิดไฟล์เป็น 1 ขั้น
+            // (undo = กลับไปโปรเจกต์ก่อนเปิดไฟล์ทั้งก้อน)
+            const afterStr = captureProjectForHistory();
+            historyLog = []; futureLog = []; undoStack = []; redoStack = [];
+            parametric.commandManager.clear();
+            parametric.commandManager.record(new FnCommand(
+                () => applyLoadedProject(JSON.parse(beforeStr), false),
+                () => applyLoadedProject(JSON.parse(afterStr), false),
+            ));
         } catch (err) {
             alert(t('alert.openFail', { msg: tData(err.message) }));
         }
@@ -3401,14 +3841,182 @@ function applyCurrentTool() {
 }
 
 function setTool(tool) {
+    if (tool !== currentTool) closeToolPops();
     currentTool = tool;
     applyCurrentTool();
     document.querySelectorAll('.vp-tool[data-tool]').forEach(b =>
         b.classList.toggle('active', b.dataset.tool === tool));
 }
 
+// --- 15b. SUB-FUNCTION POPUPS (ย้าย / หมุน) ---
+const toolOpts = { gridStep: false, magnet: false, collide: false, showAngle: true, angleLock: false };
+
+function closeToolPops() {
+    document.querySelectorAll('#viewport-toolbar .vp-pop.open').forEach(p => p.classList.remove('open'));
+    document.querySelectorAll('#viewport-toolbar .vp-tool.open').forEach(b => b.classList.remove('open'));
+}
+
 document.querySelectorAll('#viewport-toolbar .vp-tool[data-tool]').forEach(btn =>
-    btn.addEventListener('click', () => setTool(btn.dataset.tool)));
+    btn.addEventListener('click', () => {
+        const tool = btn.dataset.tool;
+        const was = currentTool === tool;
+        const pop = document.querySelector(`#viewport-toolbar .vp-pop[data-pop="${tool}"]`);
+        const wasOpen = !!pop && pop.classList.contains('open');
+        setTool(tool);
+        closeToolPops();
+        if (pop && !(was && wasOpen)) { pop.classList.add('open'); btn.classList.add('open'); }
+    }));
+
+function applyAngleLock() {
+    const v = parseFloat(document.getElementById('sel-angle-lock')?.value);
+    transformControl.setRotationSnap(toolOpts.angleLock && v > 0 ? THREE.MathUtils.degToRad(v) : null);
+}
+document.querySelectorAll('#viewport-toolbar .vp-sub[data-sub]').forEach(b =>
+    b.addEventListener('click', () => {
+        const k = b.dataset.sub;
+        toolOpts[k] = !toolOpts[k];
+        b.classList.toggle('on', toolOpts[k]);
+        if (k === 'angleLock') applyAngleLock();
+        if (k === 'magnet' && !toolOpts.magnet) clearMagnetGuides();
+    }));
+document.getElementById('sel-angle-lock')?.addEventListener('change', applyAngleLock);
+
+// --- 15c. MOVE / ROTATE ASSIST (grid step, magnet, collision, angle badge) ---
+const MAGNET_THRESHOLD = 0.3, COLLIDE_EPS = 1e-4;
+const magnetGuides = new THREE.Group();
+scene.add(magnetGuides);
+const rotBadge = document.getElementById('rot-badge');
+let dragInfo = null;
+
+function clearMagnetGuides() {
+    while (magnetGuides.children.length) {
+        const g = magnetGuides.children.pop();
+        g.geometry.dispose(); g.material.dispose();
+    }
+}
+
+function boxesOverlap(a, b) {
+    return a.min.x < b.max.x - COLLIDE_EPS && a.max.x > b.min.x + COLLIDE_EPS &&
+           a.min.y < b.max.y - COLLIDE_EPS && a.max.y > b.min.y + COLLIDE_EPS &&
+           a.min.z < b.max.z - COLLIDE_EPS && a.max.z > b.min.z + COLLIDE_EPS;
+}
+
+transformControl.addEventListener('dragging-changed', (e) => {
+    const o = transformControl.object;
+    if (e.value && o) {
+        const others = [];
+        objects.forEach(ob => {
+            if (ob === o || !ob.visible || ob.userData?.isParametricOpening) return;
+            if (ob.getObjectById(o.id) || o.getObjectById(ob.id)) return;
+            others.push({ box: new THREE.Box3().setFromObject(ob) });
+        });
+        const startBox = new THREE.Box3().setFromObject(o);
+        others.forEach(x => { x.startOverlap = boxesOverlap(startBox, x.box); });
+        dragInfo = { start: o.position.clone(), last: o.position.clone(), startQuat: o.quaternion.clone(), others };
+    } else {
+        dragInfo = null;
+        dropUndoIfUnchanged();
+        clearMagnetGuides();
+        if (rotBadge) rotBadge.style.display = 'none';
+    }
+});
+
+function refreshAfterAssist(o) {
+    o.updateMatrixWorld(true);
+    syncOpeningsToWallMeshes();
+    updatePosInputsFromObject();
+    updateDimensionLabels();
+}
+
+function collides(o) {
+    const b = new THREE.Box3().setFromObject(o);
+    return dragInfo.others.some(x => !x.startOverlap && boxesOverlap(b, x.box));
+}
+
+transformControl.addEventListener('objectChange', () => {
+    const o = transformControl.object;
+    if (!o || !dragInfo || !transformControl.dragging) return;
+
+    if (transformControl.mode === 'translate') {
+        let changed = false;
+        if (toolOpts.gridStep) {
+            const w = parseFloat(document.getElementById('inp-grid-width')?.value) || 20;
+            const l = parseFloat(document.getElementById('inp-grid-length')?.value) || 20;
+            const d = Math.max(1, Math.round(parseFloat(document.getElementById('inp-grid-divisions')?.value) || 20));
+            const cx = w / d, cz = l / d, s = dragInfo.start;
+            o.position.x = s.x + Math.round((o.position.x - s.x) / cx) * cx;
+            o.position.y = s.y + Math.round((o.position.y - s.y) / cz) * cz;
+            o.position.z = s.z + Math.round((o.position.z - s.z) / cz) * cz;
+            changed = true;
+        }
+        clearMagnetGuides();
+        if (toolOpts.magnet && dragInfo.others.length) {
+            o.updateMatrixWorld(true);
+            const mb = new THREE.Box3().setFromObject(o);
+            const vals = (b, ax) => [b.min[ax], (b.min[ax] + b.max[ax]) / 2, b.max[ax]];
+            const hits = [];
+            ['x', 'z'].forEach(ax => {
+                let best = null;
+                dragInfo.others.forEach(x => {
+                    const mv = vals(mb, ax), ov = vals(x.box, ax);
+                    mv.forEach(a => ov.forEach(bv => {
+                        const diff = bv - a;
+                        if (Math.abs(diff) < MAGNET_THRESHOLD && (!best || Math.abs(diff) < Math.abs(best.diff))) best = { diff, value: bv, box: x.box };
+                    }));
+                });
+                if (best) { o.position[ax] += best.diff; hits.push({ ax, ...best }); changed = true; }
+            });
+            if (hits.length) {
+                o.updateMatrixWorld(true);
+                const nb = new THREE.Box3().setFromObject(o);
+                const y = nb.min.y + 0.02, pts = [];
+                hits.forEach(h => {
+                    if (h.ax === 'x') {
+                        pts.push(h.value, y, Math.min(nb.min.z, h.box.min.z), h.value, y, Math.max(nb.max.z, h.box.max.z));
+                    } else {
+                        pts.push(Math.min(nb.min.x, h.box.min.x), y, h.value, Math.max(nb.max.x, h.box.max.x), y, h.value);
+                    }
+                });
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+                const mat = new THREE.LineBasicMaterial({ color: 0x00ff66, depthTest: false, depthWrite: false, transparent: true });
+                const line = new THREE.LineSegments(geo, mat);
+                line.renderOrder = 999;
+                magnetGuides.add(line);
+            }
+        }
+        if (toolOpts.collide) {
+            o.updateMatrixWorld(true);
+            if (collides(o)) {
+                const cur = o.position.clone(), last = dragInfo.last;
+                const tries = [[cur.x, cur.y, last.z], [last.x, cur.y, cur.z], [last.x, last.y, last.z]];
+                for (const t of tries) {
+                    o.position.set(t[0], t[1], t[2]);
+                    o.updateMatrixWorld(true);
+                    if (!collides(o)) break;
+                }
+                clearMagnetGuides();
+                changed = true;
+            }
+            dragInfo.last.copy(o.position);
+        }
+        if (changed) refreshAfterAssist(o);
+    } else if (transformControl.mode === 'rotate' && toolOpts.showAngle && rotBadge) {
+        const dq = o.quaternion.clone().multiply(dragInfo.startQuat.clone().invert());
+        const ax = transformControl.axis;
+        const av = ax === 'X' ? [1, 0, 0] : ax === 'Y' ? [0, 1, 0] : ax === 'Z' ? [0, 0, 1] : null;
+        let ang = av ? 2 * Math.atan2(dq.x * av[0] + dq.y * av[1] + dq.z * av[2], dq.w)
+                     : 2 * Math.acos(Math.min(1, Math.abs(dq.w)));
+        ang = THREE.MathUtils.radToDeg(ang);
+        ang = ((ang + 180) % 360 + 360) % 360 - 180;
+        const p = o.getWorldPosition(new THREE.Vector3()).project(camera);
+        const r = renderer.domElement.getBoundingClientRect();
+        rotBadge.style.left = (r.left + (p.x + 1) / 2 * r.width) + 'px';
+        rotBadge.style.top = (r.top + (1 - p.y) / 2 * r.height) + 'px';
+        rotBadge.textContent = ang.toFixed(1) + '°';
+        rotBadge.style.display = 'block';
+    }
+});
 
 (function initQuickstart() {
     const qs = document.getElementById('quickstart');

@@ -15,7 +15,7 @@ export class FloorManager {
     }
 
     addFloor({ elevation, height = 3.0, name } = {}) {
-        const level = this.model.floors.size + 1;
+        const level = Math.max(0, ...[...this.model.floors.values()].map(f => f.level)) + 1; // ไม่ซ้ำแม้ลบชั้นกลางไปแล้ว
         // Default elevation = stack directly on top of the highest existing floor.
         const autoElevation = elevation ?? this._highestFloorTop();
         const floor = this.model.addFloor({ level, elevation: autoElevation, height, name });

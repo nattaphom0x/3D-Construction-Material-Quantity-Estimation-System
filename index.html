@@ -199,6 +199,7 @@
                     <label class="setting-row"><span data-i18n="tools.floors.landPlotImage">ภาพเขตที่ดิน</span><input type="checkbox" id="chk-layer-landPlotImage" class="setting-toggle"></label>
                 </div>
                 <button id="btn-add-floor" class="action-btn" data-i18n="tools.floors.add">+ เพิ่มชั้นใหม่</button>
+                <button id="btn-delete-floor" class="btn-danger" data-i18n="tools.floors.delete">− ลบชั้นที่เลือก</button>
                 <p class="outliner-hint" data-i18n="tools.floors.hint">ผนังใหม่ที่วาดจะอยู่บนชั้นที่เลือกไว้ (แถบสีเน้น) เท่านั้น — คลิกชื่อชั้นซ้ำเพื่อเปิด/ปิดแผงเลเยอร์</p>
             </div>
 
@@ -371,12 +372,30 @@
 
     <!-- 6. แถบเครื่องมือลอยกลางจอ (แบบ SketchUp) -->
     <div id="viewport-toolbar">
-        <button class="vp-tool active" data-tool="translate" data-i18n-title="action.move.titleT" title="ย้าย (T)"><span class="vp-ico">✥</span><span data-i18n="action.move">ย้าย</span></button>
-        <button class="vp-tool" data-tool="rotate" data-i18n-title="action.rotate.titleE" title="หมุน (E)"><span class="vp-ico">⟳</span><span data-i18n="action.rotate">หมุน</span></button>
+        <div class="vp-wrap">
+            <button class="vp-tool active" data-tool="translate" data-i18n-title="action.move.titleT" title="ย้าย (T)"><span class="vp-ico">✥</span><span data-i18n="action.move">ย้าย</span></button>
+            <div class="vp-pop" data-pop="translate">
+                <button class="vp-sub" data-sub="gridStep" data-i18n="sub.gridStep">ย้ายตามตาราง</button>
+                <button class="vp-sub" data-sub="magnet" data-i18n="sub.magnet">แม่เหล็กจัดแนว</button>
+                <button class="vp-sub" data-sub="collide" data-i18n="sub.collide">ชนแล้วดันไม่ได้</button>
+            </div>
+        </div>
+        <div class="vp-wrap">
+            <button class="vp-tool" data-tool="rotate" data-i18n-title="action.rotate.titleE" title="หมุน (E)"><span class="vp-ico">⟳</span><span data-i18n="action.rotate">หมุน</span></button>
+            <div class="vp-pop" data-pop="rotate">
+                <button class="vp-sub on" data-sub="showAngle" data-i18n="sub.showAngle">แสดงองศา</button>
+                <div class="vp-sub-row">
+                    <button class="vp-sub" data-sub="angleLock" data-i18n="sub.angleLock">ล็อกองศา</button>
+                    <select id="sel-angle-lock"><option value="90">90°</option><option value="45" selected>45°</option><option value="30">30°</option><option value="15">15°</option><option value="10">10°</option></select>
+                </div>
+            </div>
+        </div>
         <button class="vp-tool" data-tool="scale" data-i18n-title="action.scale.titleR" title="ปรับขนาด (R)"><span class="vp-ico">⤢</span><span data-i18n="action.scale">ขนาด</span></button>
         <div class="vp-sep"></div>
         <button class="vp-tool" data-tool="select" data-i18n-title="action.select.titleQ" title="เลือกอย่างเดียว ไม่ให้ลูกศรบัง (Q)"><span class="vp-ico">⌖</span><span data-i18n="action.select">เลือก</span></button>
     </div>
+
+    <div id="rot-badge"></div>
 
     <!-- 7a. ตั้งค่าตารางพื้นที่ทำงานก่อนเริ่มใช้งาน (บังคับตั้งค่าครั้งแรก) -->
     <div id="gridsetup">

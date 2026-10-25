@@ -69,6 +69,7 @@ export const translations = {
         'tools.floors.plainGrid': 'ตารางทั่วไป',
         'tools.floors.landPlotImage': 'ภาพเขตที่ดิน',
         'tools.floors.add': '+ เพิ่มชั้นใหม่',
+        'tools.floors.delete': '− ลบชั้นที่เลือก',
         'tools.floors.hint': 'ผนังใหม่ที่วาดจะอยู่บนชั้นที่เลือกไว้ (แถบสีเน้น) เท่านั้น — คลิกชื่อชั้นซ้ำเพื่อเปิด/ปิดแผงเลเยอร์',
 
         'tools.position.heading': 'ตำแหน่งวัตถุ (Position)',
@@ -139,6 +140,11 @@ export const translations = {
         'settings.landplot.remove': 'ลบภาพ',
 
         // ---- Shared action words (viewport toolbar, landplot edit modes) ----
+        'sub.gridStep': 'ย้ายตามตาราง',
+        'sub.magnet': 'แม่เหล็กจัดแนว',
+        'sub.collide': 'ชนแล้วดันไม่ได้',
+        'sub.showAngle': 'แสดงองศา',
+        'sub.angleLock': 'ล็อกองศา',
         'action.move': 'ย้าย',
         'action.rotate': 'หมุน',
         'action.scale': 'ขนาด',
@@ -280,6 +286,8 @@ export const translations = {
         'floors.tooltip': 'ระดับพื้น: {elev} ม. | สูง: {h} ม.',
         'floors.promptHeight': 'ความสูงของชั้นใหม่ (เมตร)',
         'floors.alertInvalidHeight': 'กรุณาใส่ความสูงเป็นตัวเลขมากกว่า 0',
+        'floors.alertLast': 'ลบไม่ได้ ต้องเหลืออย่างน้อย 1 ชั้น',
+        'floors.confirmDelete': 'ลบ "{name}" และผนังบนชั้นนี้ {n} ชิ้น?',
         'landplot.alertUploadFail': 'อัปโหลดภาพเขตที่ดินไม่สำเร็จ: {msg}',
         'landplot.confirmRemove': 'ลบภาพเขตที่ดินของชั้นนี้?',
         'cut.confirmReset': 'ล้างเส้นตัดทั้งหมดของชั้นนี้ และตั้งขอบเขตใหม่จากภาพ/กริดปัจจุบัน?',
@@ -410,6 +418,7 @@ export const translations = {
         'tools.floors.plainGrid': 'General Grid',
         'tools.floors.landPlotImage': 'Land Plot Image',
         'tools.floors.add': '+ Add New Floor',
+        'tools.floors.delete': '− Delete Selected Floor',
         'tools.floors.hint': 'New walls are drawn only on the selected floor (highlighted). Click a floor name again to toggle its layer panel.',
 
         'tools.position.heading': 'Object Position',
@@ -480,6 +489,11 @@ export const translations = {
         'settings.landplot.remove': 'Remove Image',
 
         // ---- Shared action words (viewport toolbar, landplot edit modes) ----
+        'sub.gridStep': 'Grid step',
+        'sub.magnet': 'Magnet align',
+        'sub.collide': 'Block on collision',
+        'sub.showAngle': 'Show angle',
+        'sub.angleLock': 'Angle lock',
         'action.move': 'Move',
         'action.rotate': 'Rotate',
         'action.scale': 'Scale',
@@ -621,6 +635,8 @@ export const translations = {
         'floors.tooltip': 'Floor level: {elev} m | Height: {h} m',
         'floors.promptHeight': 'Height of the new floor (metres)',
         'floors.alertInvalidHeight': 'Please enter a height greater than 0.',
+        'floors.alertLast': 'Cannot delete: at least 1 floor must remain.',
+        'floors.confirmDelete': 'Delete "{name}" and its {n} wall(s)?',
         'landplot.alertUploadFail': 'Failed to upload the land plot image: {msg}',
         'landplot.confirmRemove': 'Delete the land plot image of this floor?',
         'cut.confirmReset': 'Clear all cut lines on this floor and reset the boundary from the current image/grid?',

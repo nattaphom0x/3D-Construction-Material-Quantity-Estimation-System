@@ -517,7 +517,8 @@ button:active { transform: translateY(1px); }
 button.active { background: var(--accent); border-color: var(--accent-glow); }
 
 button.action-btn { background: var(--action-btn-bg); border-color: var(--action-btn-border); }
-button.action-btn:hover { background: var(--accent); border-color: var(--accent-glow); }
+button.action-btn:hover,
+button.action-btn.active { background: var(--accent); border-color: var(--accent-glow); color: white; }
 
 button.calc-btn { background: var(--success); border-color: #3cbf80; color: white; font-weight: 600; }
 button.calc-btn:hover { background: var(--success-hover); }
@@ -763,6 +764,26 @@ td.qty, .boq-summary td.qty { text-align: right; font-family: var(--font-mono); 
 .vp-tool:hover { background: #2b3644; color: var(--text-primary); }
 .vp-tool.active { background: var(--accent); border-color: var(--accent-glow); color: #fff; }
 .vp-sep { width: 1px; background: var(--panel-border); margin: 4px 2px; }
+.vp-tool.open { background: #2b3644; color: var(--text-primary); border-color: var(--accent-glow); }
+.vp-wrap { position: relative; display: flex; }
+.vp-pop {
+    display: none; position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%);
+    flex-direction: column; gap: 4px; min-width: 150px; padding: 6px;
+    background: var(--panel-bg); border: 1px solid var(--panel-border);
+    border-radius: var(--radius-md); box-shadow: var(--shadow-float);
+}
+.vp-pop.open { display: flex; animation: vp-rise .16s ease-out; }
+@keyframes vp-rise { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.vp-sub { width: 100%; margin: 0; padding: 7px 10px; font-size: 12px; text-align: left; white-space: nowrap;
+    background: var(--surface-raised); border: 1px solid var(--panel-border); color: var(--text-secondary); border-radius: var(--radius-md); }
+.vp-sub:hover { background: #2b3644; color: var(--text-primary); }
+.vp-sub.on { background: #2b3644; color: var(--text-primary); border-color: #3ddc84; }
+.vp-sub.on::before { content: "● "; color: #3ddc84; }
+.vp-sub-row { display: flex; gap: 4px; }
+.vp-sub-row .vp-sub { flex: 1; }
+.vp-sub-row select { width: 62px; margin: 0; font-size: 12px; }
+#rot-badge { position: fixed; display: none; z-index: 95; pointer-events: none; transform: translate(-50%, -150%);
+    padding: 3px 8px; font-size: 13px; font-weight: 600; color: #fff; background: var(--accent); border-radius: var(--radius-md); }
 
 /* =====================================================================
    QUICKSTART CARD — signature element
