@@ -60,11 +60,6 @@ export class OpeningRenderer {
         this.meshesByOpeningId.delete(openingId);
     }
 
-    /** ล้างช่องเจาะทั้งหมด (ใช้ก่อนโหลดโปรเจกต์ — กันช่องจากโปรเจกต์เก่าค้างในฉาก) */
-    clearAll() {
-        [...this.meshesByOpeningId.keys()].forEach(id => this._removeMesh(id));
-    }
-
     renderAll() {
         this.model.openings.forEach(o => this._createOrUpdateMesh(o));
     }

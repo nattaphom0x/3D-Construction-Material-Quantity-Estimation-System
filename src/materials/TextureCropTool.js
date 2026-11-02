@@ -1,4 +1,3 @@
-import { t } from '../i18n/i18n.js';
 /**
  * TextureCropTool — lets the user pick exactly which rectangular region of
  * an uploaded texture image gets used, instead of always using the whole
@@ -46,8 +45,8 @@ function ensureDom() {
         <div class="qs-card tex-crop-card">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
                 <div>
-                    <h2>${t('crop.title')}</h2>
-                    <p class="qs-sub">${t('crop.sub')}</p>
+                    <h2>เลือกพื้นที่ภาพ (Crop)</h2>
+                    <p class="qs-sub">ลากมุมทั้ง 4 ของกรอบสี่เหลี่ยม หรือลากตรงกลางกรอบเพื่อย้าย เพื่อเลือกส่วนของภาพที่จะนำไปใช้เป็น texture</p>
                 </div>
                 <button class="win-btn btn-close" id="tex-crop-close">×</button>
             </div>
@@ -55,10 +54,10 @@ function ensureDom() {
                 <canvas id="tex-crop-canvas"></canvas>
             </div>
             <div class="tex-crop-actions">
-                <button type="button" class="calc-btn" id="tex-crop-reset">${t('crop.reset')}</button>
+                <button type="button" class="calc-btn" id="tex-crop-reset">ใช้ภาพเต็ม</button>
                 <div style="flex:1"></div>
-                <button type="button" class="calc-btn" id="tex-crop-cancel">${t('crop.cancel')}</button>
-                <button type="button" class="calc-btn qs-close-btn" id="tex-crop-apply">${t('crop.apply')}</button>
+                <button type="button" class="calc-btn" id="tex-crop-cancel">ยกเลิก</button>
+                <button type="button" class="calc-btn qs-close-btn" id="tex-crop-apply">ใช้พื้นที่นี้</button>
             </div>
         </div>`;
     document.body.appendChild(modalEl);

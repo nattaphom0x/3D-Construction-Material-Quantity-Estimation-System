@@ -78,7 +78,8 @@ export function bootstrapParametricBuilding({ scene, camera, domElement, onWallM
             const command = new CreateOpeningCommand(openingManager, props);
             const opening = command.execute();
             if (!opening) return null;
-            commandManager.record(command);
+            commandManager.undoStack.push(command);
+            commandManager.redoStack.length = 0;
             return opening;
         },
         deleteOpeningFn: (openingId) => commandManager.execute(new DeleteOpeningCommand(openingManager, openingId)),
@@ -170,10 +171,6 @@ export function bootstrapParametricBuilding({ scene, camera, domElement, onWallM
             : data;
 
         const { buildingModel: loadedModel, legacy } = loadProject(normalized);
-        // ล้าง mesh ผนัง/ช่องเจาะของโปรเจกต์เดิมก่อน ไม่งั้นผนัง id เดิมจะถูก "อัปเดต" mesh เก่าที่หลุดจากฉากแล้ว
-        // (ไม่เข้า objects/scene) และช่องเจาะเก่าจะค้างเป็นผี
-        renderer.clearAll();
-        openingRenderer.clearAll();
         buildingModel.floors = loadedModel.floors;
         buildingModel.nodes = loadedModel.nodes;
         buildingModel.walls = loadedModel.walls;
