@@ -90,7 +90,7 @@ export class LandPlotOverlay {
         const pos = data.position || { x: 0, z: 0 };
         const scl = data.scale || { x: 10, z: 10 };
         this.group.position.set(pos.x, this.group.position.y, pos.z);
-        this.group.rotation.y = data.rotationY || 0;
+        this.group.rotation.set(0, data.rotationY || 0, 0); // ล้าง x/z ที่ค้างจาก gizmo (Euler flip)
         this.group.scale.set(scl.x, 1, scl.z);
         this.material.opacity = data.opacity ?? 0.75;
         this.setVisible(data.visible !== false);
@@ -127,10 +127,16 @@ export class LandPlotOverlay {
             dataUrl: this.dataUrl,
             position: { x: this.group.position.x, z: this.group.position.z },
             scale: { x: this.group.scale.x, z: this.group.scale.z },
-            rotationY: this.group.rotation.y,
+            rotationY: this._yaw(),
             opacity: this.material.opacity,
             visible: this.group.visible,
         };
+    }
+
+    /** มุมหมุนรอบแกน Y จริงจาก quaternion — rotation.y ตรงๆ ผิดเมื่อ gizmo หมุนเกิน 90° (Euler พลิก x/z) */
+    _yaw() {
+        const q = this.group.quaternion;
+        return Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
     }
 
     dispose() {

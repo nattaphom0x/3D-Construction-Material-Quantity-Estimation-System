@@ -10,12 +10,21 @@ export class CommandManager {
     constructor() {
         this.undoStack = [];
         this.redoStack = [];
+        this.onRecord = null; // เรียกทุกครั้งที่มีคำสั่งใหม่ถูกบันทึก (ใช้รวมเป็นลำดับ undo เดียวกับระบบชิ้นงาน)
+    }
+
+    /** บันทึกคำสั่งที่ผลลัพธ์เกิดขึ้นไปแล้ว (ไม่เรียก execute ซ้ำ) */
+    record(command) {
+        this.undoStack.push(command);
+        this.redoStack.length = 0;
+        if (this.onRecord) this.onRecord(command);
     }
 
     execute(command) {
         const result = command.execute();
         this.undoStack.push(command);
         this.redoStack.length = 0;
+        if (this.onRecord) this.onRecord(command);
         return result;
     }
 

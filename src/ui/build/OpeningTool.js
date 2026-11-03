@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getWallGeometry } from '../../building/wall/WallGeometry.js';
 import { getWallDelta, worldToWallModel } from '../../scene/WallTransform.js';
+import { t as tr, tData } from '../../i18n/i18n.js';
 
 /**
  * OpeningTool (project spec §13, §46 DoorTool/WindowTool). ผู้ใช้คลิกที่ผนัง →
@@ -75,8 +76,8 @@ export class OpeningTool {
         const placement = this.openingManager.getOpeningPlacement(fake);
         this._showPreview(fake, placement, result.ok, wallMesh);
         this.onStatus(result.ok
-            ? { ok: true, text: `เจาะ${this.type === 'window' ? 'หน้าต่าง' : 'ประตู'} ${fake.width.toFixed(2)}×${fake.height.toFixed(2)} ม. สูงจากพื้น ${fake.sillHeight.toFixed(2)} ม.` }
-            : { ok: false, text: `เจาะไม่ได้: ${result.reason}` });
+            ? { ok: true, text: tr('opening.status.ok', { type: tr(this.type === 'window' ? 'opening.type.window' : 'opening.type.door'), w: fake.width.toFixed(2), h: fake.height.toFixed(2), sill: fake.sillHeight.toFixed(2) }) }
+            : { ok: false, text: tr('opening.status.fail', { reason: tData(result.reason) }) });
     }
 
     _showPreview(o, placement, ok, wallMesh) {
@@ -114,7 +115,7 @@ export class OpeningTool {
         if (remove) { this._removeAt(clientX, clientY); return null; }
         const loc = this._locate(clientX, clientY);
         if (!loc) return null;
-        if (!loc.result.ok) { this.onStatus({ ok: false, text: `เจาะไม่ได้: ${loc.result.reason}` }); return null; }
+        if (!loc.result.ok) { this.onStatus({ ok: false, text: tr('opening.status.fail', { reason: tData(loc.result.reason) }) }); return null; }
         const r = loc.result;
         const created = this.createOpeningFn({
             wallId: loc.wallId, offset: r.offset, width: r.width, height: r.height, sillHeight: r.sillHeight, type: this.type,
